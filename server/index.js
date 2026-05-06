@@ -39,6 +39,18 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
 };
 
+let cachedIndexHtml = null;
+function getIndexHtml() {
+  if (cachedIndexHtml) return cachedIndexHtml;
+  const indexHtml = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(PUBLIC_DIR, 'styles.css'), 'utf8');
+  cachedIndexHtml = indexHtml.replace(
+    '<link rel="stylesheet" href="/styles.css" />',
+    `<link rel="stylesheet" href="/styles.css" />\n<style data-inline-css>\n${css}\n</style>`
+  );
+  return cachedIndexHtml;
+}
+
 function send(res, status, body, headers = {}) {
   res.writeHead(status, { 'Cache-Control': 'no-store', ...headers });
   res.end(body);
@@ -55,6 +67,9 @@ const httpServer = http.createServer((req, res) => {
     }), { 'Content-Type': MIME['.json'] });
   }
   if (urlPath === '/') urlPath = '/index.html';
+  if (urlPath === '/index.html') {
+    return send(res, 200, getIndexHtml(), { 'Content-Type': MIME['.html'] });
+  }
   const filePath = path.join(PUBLIC_DIR, urlPath);
   if (!filePath.startsWith(PUBLIC_DIR)) return send(res, 403, 'Forbidden');
   fs.readFile(filePath, (err, data) => {
