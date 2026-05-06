@@ -1,0 +1,21 @@
+{
+  "name": "xioma-f1-reaction",
+  "version": "1.0.0",
+  "private": true,
+  "description": "XIOMA — F1 Reaction Time Game. Server-authoritative PvP reaction duel.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "smoke": "node scripts/e2e.js",
+    "smoke:rematch": "node scripts/e2e-already-in.js",
+    "smoke:room": "node scripts/e2e-room.js",
+    "tunnel": "npx --yes localtunnel --port ${PORT:-3000}"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

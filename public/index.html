@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#07070a" />
+<title>XIOMA · F1 Reaction</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<!-- ========== APP SHELL ========== -->
+<div class="shell">
+
+  <!-- ========== SIDEBAR ========== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-logo" viewBox="0 0 32 32" width="28" height="28">
+        <path d="M4 16 L11 5 H21 L28 16 L21 27 H11 Z" fill="none" stroke="#ff2c3a" stroke-width="2.2"/>
+        <path d="M11 16 H21" stroke="#ff2c3a" stroke-width="2.2"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-name">XIOMA</div>
+        <div class="brand-tag">F1 REACTION</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-nav="home">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 11 L12 4 L21 11 V20 H14 V14 H10 V20 H3 Z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="nav-item" data-nav="play">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 5 L19 12 L7 19 Z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>Play</span>
+        <span class="nav-pill">3</span>
+      </button>
+      <button class="nav-item" data-nav="leaderboard">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 21 V11 H9 V21 M10 21 V5 H14 V21 M15 21 V13 H19 V21 M3 21 H21" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>Leaderboard</span>
+      </button>
+      <button class="nav-item" data-nav="profile">
+        <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="9" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>Profile</span>
+      </button>
+      <button class="nav-item" data-nav="wallet">
+        <svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="6" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 10 H21" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="14.5" r="1.2" fill="currentColor"/></svg>
+        <span>Wallet</span>
+      </button>
+      <button class="nav-item" data-nav="settings">
+        <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M5.6 18.4 L7.7 16.3 M16.3 7.7 L18.4 5.6" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="foot-card">
+        <div class="foot-eyebrow">DAILY CHALLENGE</div>
+        <div class="foot-title" id="dailyTitle">Beat 220 ms</div>
+        <div class="foot-sub" id="dailyStatus">Solo · Free</div>
+        <button class="btn btn-tiny" data-nav="play" id="dailyJump">TRY</button>
+      </div>
+      <div class="ping-row">
+        <div class="ping"><span class="dot"></span><span id="pingText">— ms</span></div>
+        <div class="server"><span class="server-dot"></span>SERVER VERIFIED</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========== MAIN ========== -->
+  <main class="main">
+
+    <!-- TOP STRIP -->
+    <header class="topstrip">
+      <div class="page-title" id="pageTitle">Home</div>
+      <div class="topstrip-right">
+        <div class="wallet-pill">
+          <span class="wallet-label">BALANCE</span>
+          <span class="wallet-amount" id="walletAmount">$0.00</span>
+          <button class="btn-mini" data-nav="wallet">+</button>
+        </div>
+        <div class="profile-pill">
+          <div class="avatar" id="profileAvatar"></div>
+          <div class="profile-text">
+            <input id="nameInput" maxlength="20" spellcheck="false" />
+            <div class="profile-id" id="playerIdShort">—</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ========== HOME ========== -->
+    <section class="page" id="page-home">
+
+      <div class="hero">
+        <div class="hero-left">
+          <div class="hero-eyebrow">REACTION DUEL · LIVE PVP</div>
+          <h1 class="hero-title">React. <span class="accent">Predict.</span><br/>Win.</h1>
+          <p class="hero-sub">A premium F1-style reaction duel. Lights go red, then random green — the fastest valid reaction takes the pot.</p>
+          <div class="hero-cta">
+            <button class="btn btn-primary btn-lg" data-nav="play">PLAY NOW</button>
+            <button class="btn btn-ghost btn-lg" data-nav="leaderboard">LEADERBOARD</button>
+          </div>
+          <div class="hero-stats">
+            <div><span class="ks-num" id="hsLive">2</span><span class="ks-lbl">LIVE</span></div>
+            <div><span class="ks-num" id="hsFee">6%</span><span class="ks-lbl">FEE</span></div>
+            <div><span class="ks-num" id="hsBest">—</span><span class="ks-lbl">YOUR BEST</span></div>
+            <div><span class="ks-num" id="hsWR">—</span><span class="ks-lbl">WIN RATE</span></div>
+          </div>
+        </div>
+
+        <div class="hero-right">
+          <div class="scene">
+            <div class="scene-track"></div>
+            <div class="scene-rig">
+              <div class="rig-bar"></div>
+              <div class="rig-row">
+                <i></i><i></i><i></i><i></i><i></i>
+              </div>
+            </div>
+            <div class="scene-cars">
+              <div class="scene-car" id="sceneCarYou"></div>
+              <div class="scene-car" id="sceneCarOpp"></div>
+            </div>
+            <div class="scene-glow"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quick-grid">
+        <button class="quick-card" data-mode="pvp">
+          <div class="quick-icon"><svg viewBox="0 0 24 24" width="28" height="28"><circle cx="8" cy="8" r="3" fill="none" stroke="#ff2c3a" stroke-width="1.6"/><circle cx="16" cy="16" r="3" fill="none" stroke="#5b8cff" stroke-width="1.6"/><path d="M11 8 H21 M3 16 H13" stroke="#9aa0b3" stroke-width="1.4"/></svg></div>
+          <div class="quick-title">PvP Duel</div>
+          <div class="quick-sub">Live opponent · pooled pot · 6% fee</div>
+          <div class="quick-meta">From $1</div>
+        </button>
+        <button class="quick-card" data-mode="bot">
+          <div class="quick-icon"><svg viewBox="0 0 24 24" width="28" height="28"><rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="#9aa0b3" stroke-width="1.6"/><circle cx="9" cy="12" r="1.4" fill="#9aa0b3"/><circle cx="15" cy="12" r="1.4" fill="#9aa0b3"/><path d="M12 4 V6" stroke="#9aa0b3" stroke-width="1.6"/></svg></div>
+          <div class="quick-title">Bot Practice</div>
+          <div class="quick-sub">Stake against AI · same payout rules</div>
+          <div class="quick-meta">From $1</div>
+        </button>
+        <button class="quick-card" data-mode="solo">
+          <div class="quick-icon"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M12 3 V12 L18 16" fill="none" stroke="#2bd47d" stroke-width="1.8"/><circle cx="12" cy="12" r="9" fill="none" stroke="#2bd47d" stroke-width="1.6"/></svg></div>
+          <div class="quick-title">Solo Time-Attack</div>
+          <div class="quick-sub">Free · beat your personal best</div>
+          <div class="quick-meta">Always free</div>
+        </button>
+      </div>
+
+      <div class="home-row">
+        <div class="panel panel-history">
+          <div class="panel-head">
+            <h3>Recent Matches</h3>
+            <button class="btn-link" data-nav="profile">All →</button>
+          </div>
+          <div class="history-list" id="homeHistory">
+            <div class="history-empty">No matches yet. Play your first round.</div>
+          </div>
+        </div>
+        <div class="panel panel-lb">
+          <div class="panel-head">
+            <h3>Top Reactions</h3>
+            <button class="btn-link" data-nav="leaderboard">Full →</button>
+          </div>
+          <div class="lb-list" id="homeLeaderboard">
+            <div class="lb-empty">No entries yet. Be the first.</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========== PLAY ========== -->
+    <section class="page hidden" id="page-play">
+      <div class="modes-tabs">
+        <button class="modes-tab active" data-modetab="pvp">PvP DUEL</button>
+        <button class="modes-tab" data-modetab="bot">VS BOT</button>
+        <button class="modes-tab" data-modetab="solo">TIME ATTACK</button>
+      </div>
+
+      <div class="mode-panel" id="modePanel-pvp">
+        <h2>PvP Duel</h2>
+        <p>Match with another live player at the same stake. Equal contribution, winner takes the pot minus a <span id="pvpFeePct">6%</span> fee.</p>
+        <div class="stake-tiers" id="pvpTiers"></div>
+        <div class="stake-summary">
+          <div><span class="lbl">STAKE</span><span class="val" id="pvpStake">—</span></div>
+          <div><span class="lbl">POT</span><span class="val" id="pvpPot">—</span></div>
+          <div><span class="lbl">FEE</span><span class="val" id="pvpFee">—</span></div>
+          <div class="prize"><span class="lbl">WINNER GETS</span><span class="val" id="pvpPrize">—</span></div>
+        </div>
+        <div class="invite-box">
+          <div>
+            <span class="invite-label">PRIVATE ROOM</span>
+            <div class="invite-code" id="roomCodeLabel">PUBLIC QUEUE</div>
+          </div>
+          <div class="invite-actions">
+            <button class="btn btn-ghost" id="btnCreateRoom" type="button">CREATE INVITE</button>
+            <button class="btn btn-ghost" id="btnCopyInvite" type="button" disabled>COPY LINK</button>
+            <button class="btn-link tiny hidden" id="btnLeaveRoom" type="button">Leave room</button>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-lg" id="btnFindPvP" disabled>FIND OPPONENT</button>
+      </div>
+
+      <div class="mode-panel hidden" id="modePanel-bot">
+        <h2>VS Bot</h2>
+        <p>Same rules, same payout. Practice your reaction with a real-money stake against an AI driver.</p>
+        <div class="stake-tiers" id="botTiers"></div>
+        <div class="stake-summary">
+          <div><span class="lbl">STAKE</span><span class="val" id="botStake">—</span></div>
+          <div><span class="lbl">POT</span><span class="val" id="botPot">—</span></div>
+          <div><span class="lbl">FEE</span><span class="val" id="botFee">—</span></div>
+          <div class="prize"><span class="lbl">WINNER GETS</span><span class="val" id="botPrize">—</span></div>
+        </div>
+        <button class="btn btn-primary btn-lg" id="btnPlayBot" disabled>RACE THE BOT</button>
+      </div>
+
+      <div class="mode-panel hidden" id="modePanel-solo">
+        <h2>Time Attack</h2>
+        <p>Free mode. No stake, no opponent, no fee. Just you and the lights — beat your own best reaction time.</p>
+        <div class="solo-best">
+          <div><span class="lbl">YOUR BEST</span><span class="val" id="soloBest">—</span></div>
+          <div><span class="lbl">RUNS</span><span class="val" id="soloRuns">0</span></div>
+          <div><span class="lbl">AVG</span><span class="val" id="soloAvg">—</span></div>
+          <div><span class="lbl">DAILY TARGET</span><span class="val" id="soloDaily">—</span></div>
+        </div>
+        <button class="btn btn-primary btn-lg" id="btnPlaySolo">START TIME ATTACK</button>
+      </div>
+    </section>
+
+    <!-- ========== LEADERBOARD ========== -->
+    <section class="page hidden" id="page-leaderboard">
+      <div class="lb-head">
+        <h2>Top Reactions</h2>
+        <p>Fastest verified reactions across the platform. Solo runs and PvP wins both qualify.</p>
+      </div>
+      <div class="lb-table" id="leaderboardTable"></div>
+    </section>
+
+    <!-- ========== PROFILE ========== -->
+    <section class="page hidden" id="page-profile">
+      <div class="profile-grid">
+        <div class="panel">
+          <div class="panel-head"><h3>Career Stats</h3></div>
+          <div class="stats-grid">
+            <div class="stat"><span class="lbl">MATCHES</span><span class="val" id="stTotal">0</span></div>
+            <div class="stat"><span class="lbl">WINS</span><span class="val" id="stWins">0</span></div>
+            <div class="stat"><span class="lbl">WIN RATE</span><span class="val" id="stWR">0%</span></div>
+            <div class="stat"><span class="lbl">BEST RX</span><span class="val accent" id="stBest">—</span></div>
+            <div class="stat"><span class="lbl">PVP NET</span><span class="val" id="stPvpNet">$0.00</span></div>
+            <div class="stat"><span class="lbl">FALSE STARTS</span><span class="val" id="stFS">0</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>Mode Breakdown</h3></div>
+          <div class="mode-rows">
+            <div class="mode-row">
+              <span class="mr-tag mr-pvp">PVP</span>
+              <span class="mr-text" id="prPvp">0–0</span>
+              <span class="mr-net" id="prPvpNet">$0.00</span>
+            </div>
+            <div class="mode-row">
+              <span class="mr-tag mr-bot">BOT</span>
+              <span class="mr-text" id="prBot">0–0</span>
+              <span class="mr-net" id="prBotNet">$0.00</span>
+            </div>
+            <div class="mode-row">
+              <span class="mr-tag mr-solo">SOLO</span>
+              <span class="mr-text" id="prSolo">0 runs</span>
+              <span class="mr-net" id="prSoloBest">— ms best</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel panel-wide">
+          <div class="panel-head"><h3>Match History</h3></div>
+          <div class="history-list" id="profileHistory">
+            <div class="history-empty">No matches yet.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== WALLET ========== -->
+    <section class="page hidden" id="page-wallet">
+      <div class="wallet-grid">
+        <div class="panel panel-balance">
+          <div class="panel-head"><h3>Balance</h3></div>
+          <div class="balance-big" id="balanceBig">$0.00</div>
+          <div class="balance-actions">
+            <button class="btn btn-primary" id="btnDeposit">DEPOSIT</button>
+            <button class="btn btn-ghost" id="btnWithdraw">WITHDRAW</button>
+          </div>
+          <div class="presets" id="depositPresets"></div>
+          <div class="custom-row">
+            <input type="number" min="1" step="1" id="customAmount" placeholder="Custom amount" />
+            <button class="btn btn-ghost" id="btnCustomDeposit">Add</button>
+          </div>
+          <div class="wallet-note">Demo credits only. No real money is processed.</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>Transactions</h3></div>
+          <div class="tx-list" id="txList">
+            <div class="tx-empty">No transactions yet.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SETTINGS ========== -->
+    <section class="page hidden" id="page-settings">
+      <div class="settings-grid">
+        <div class="panel">
+          <div class="panel-head"><h3>Driver</h3></div>
+          <label class="field">
+            <span>Display name</span>
+            <input id="settingsName" maxlength="20" />
+          </label>
+          <div class="field">
+            <span>Livery</span>
+            <div class="liveries" id="liveryPicker"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Audio</h3></div>
+          <label class="toggle">
+            <input type="checkbox" id="soundToggle" checked />
+            <span>Sound effects</span>
+          </label>
+          <div class="hint">Crisp light beeps, green-light cue, win sting, false-start alarm.</div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Input</h3></div>
+          <div class="hint">Tap, click, <kbd>Space</kbd>, or <kbd>Enter</kbd> all register as input.</div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Fairness</h3></div>
+          <div class="hint">All match seeds, green-light times, and reaction values are recorded server-side. The seed is shown after every match.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== MATCHMAKING OVERLAY ========== -->
+    <section class="overlay hidden" id="overlay-mm">
+      <div class="mm-card">
+        <div class="mm-radar">
+          <div class="radar-ring"></div>
+          <div class="radar-ring r2"></div>
+          <div class="radar-ring r3"></div>
+          <div class="radar-dot"></div>
+        </div>
+        <h2>Finding opponent</h2>
+        <p>Stake locked at <span id="mmStake">—</span></p>
+        <p class="mm-room hidden" id="mmRoom">Room <span id="mmRoomCode">—</span></p>
+        <button class="btn btn-ghost" id="btnCancelMM">Cancel</button>
+      </div>
+    </section>
+
+    <!-- ========== RACE ARENA ========== -->
+    <section class="overlay hidden" id="overlay-race">
+      <div class="race-shell">
+
+        <div class="hud">
+          <div class="hud-card hud-left">
+            <div class="hud-name" id="youName">YOU</div>
+            <div class="hud-meta"><span id="youStake">—</span></div>
+            <div class="hud-rt" id="youRt">—</div>
+          </div>
+          <div class="hud-center">
+            <div class="hud-status" id="hudStatus">GET READY</div>
+            <div class="hud-pot">POT <span id="hudPot">—</span> · FEE <span id="hudFee">—</span></div>
+            <div class="hud-mode" id="hudMode">PVP</div>
+          </div>
+          <div class="hud-card hud-right">
+            <div class="hud-name" id="oppName">OPPONENT</div>
+            <div class="hud-meta"><span id="oppStake">—</span></div>
+            <div class="hud-rt" id="oppRt">—</div>
+          </div>
+        </div>
+
+        <div class="arena" id="arena">
+          <div class="arena-bg">
+            <div class="arena-track"></div>
+            <div class="arena-haze"></div>
+          </div>
+
+          <div class="rig">
+            <div class="rig-frame"></div>
+            <div class="lights" id="lights">
+              <div class="light"></div>
+              <div class="light"></div>
+              <div class="light"></div>
+              <div class="light"></div>
+              <div class="light"></div>
+            </div>
+          </div>
+
+          <div class="cars-arena" id="carsArena">
+            <div class="lane lane-you" id="laneYou"></div>
+            <div class="lane lane-opp" id="laneOpp"></div>
+          </div>
+
+          <div class="finish-line" id="finishLine"></div>
+
+          <button class="tap-zone" id="tapZone" type="button" aria-label="Tap when lights go out">
+            <span class="tap-instruction" id="tapInstruction">TAP THE MOMENT THE LIGHTS GO OUT</span>
+          </button>
+        </div>
+
+        <div class="footer-note">
+          <span class="dot dot-green"></span> SERVER VERIFIED · Random green-light · Equal stakes
+          <button class="btn-link tiny" id="btnQuit">Quit match</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== RESULT MODAL ========== -->
+    <div class="modal hidden" id="resultModal">
+      <div class="modal-card" id="resultCard">
+        <div class="result-banner" id="resultBanner">RESULT</div>
+        <div class="result-times">
+          <div class="rt-block" id="rtYouBlock">
+            <div class="rt-label" id="rtYouLabel">YOU</div>
+            <div class="rt-value" id="rtYou">—</div>
+            <div class="rt-tag" id="rtYouTag"></div>
+          </div>
+          <div class="vs">vs</div>
+          <div class="rt-block" id="rtOppBlock">
+            <div class="rt-label" id="rtOppLabel">OPPONENT</div>
+            <div class="rt-value" id="rtOpp">—</div>
+            <div class="rt-tag" id="rtOppTag"></div>
+          </div>
+        </div>
+        <div class="result-payout">
+          <div><span class="lbl">POT</span><span class="val" id="rPot">—</span></div>
+          <div><span class="lbl">FEE</span><span class="val" id="rFee">—</span></div>
+          <div class="net"><span class="lbl">PAYOUT</span><span class="val" id="rPayout">—</span></div>
+        </div>
+        <div class="result-extra" id="resultExtra"></div>
+        <div class="result-actions">
+          <button class="btn btn-ghost" id="btnLobby">Lobby</button>
+          <button class="btn btn-primary" id="btnRematch">Rematch</button>
+        </div>
+        <div class="result-seed">match seed · <span id="rSeed">—</span></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- F1 car SVG template (used by JS) -->
+<template id="f1-car-template">
+  <svg class="f1-car" viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg">
+    <!-- shadow -->
+    <ellipse cx="100" cy="350" rx="78" ry="6" fill="rgba(0,0,0,0.55)"/>
+
+    <!-- Front wing -->
+    <g class="part front-wing">
+      <rect x="10" y="40" width="180" height="16" rx="3" class="livery-deep"/>
+      <rect x="10" y="40" width="180" height="6" rx="2" class="livery-mid"/>
+      <rect x="20" y="56" width="20" height="14" class="livery-deep"/>
+      <rect x="160" y="56" width="20" height="14" class="livery-deep"/>
+    </g>
+
+    <!-- Front wheels -->
+    <g class="part wheels">
+      <rect x="2" y="60" width="22" height="58" rx="6" fill="#0a0a0e"/>
+      <rect x="6" y="64" width="14" height="50" rx="3" fill="#1a1a22"/>
+      <rect x="176" y="60" width="22" height="58" rx="6" fill="#0a0a0e"/>
+      <rect x="180" y="64" width="14" height="50" rx="3" fill="#1a1a22"/>
+    </g>
+
+    <!-- Nose cone -->
+    <path d="M82 60 L100 30 L118 60 L118 130 L82 130 Z" class="livery-mid"/>
+    <path d="M88 60 L100 38 L112 60 L112 130 L88 130 Z" class="livery-bright"/>
+
+    <!-- Side pods -->
+    <path d="M30 130 L50 150 L50 270 L30 280 Z" class="livery-deep"/>
+    <path d="M170 130 L150 150 L150 270 L170 280 Z" class="livery-deep"/>
+
+    <!-- Body / chassis -->
+    <path d="M50 130 L150 130 L150 260 L50 260 Z" class="livery-mid"/>
+    <path d="M55 140 L145 140 L145 250 L55 250 Z" class="livery-bright"/>
+
+    <!-- Halo + cockpit -->
+    <ellipse cx="100" cy="170" rx="22" ry="14" fill="#0c0c10"/>
+    <ellipse cx="100" cy="170" rx="18" ry="10" fill="#1a1a22"/>
+    <path d="M78 170 Q100 144 122 170" stroke="#0a0a0e" stroke-width="6" fill="none"/>
+    <ellipse cx="100" cy="178" rx="10" ry="6" fill="#000"/>
+
+    <!-- Engine cover / airbox -->
+    <path d="M85 200 L115 200 L120 240 L80 240 Z" fill="#0a0a0e"/>
+    <rect x="92" y="180" width="16" height="28" rx="3" fill="#0c0c10"/>
+
+    <!-- Rear wheels -->
+    <g class="part wheels">
+      <rect x="0" y="240" width="26" height="64" rx="6" fill="#0a0a0e"/>
+      <rect x="4" y="244" width="18" height="56" rx="3" fill="#1a1a22"/>
+      <rect x="174" y="240" width="26" height="64" rx="6" fill="#0a0a0e"/>
+      <rect x="178" y="244" width="18" height="56" rx="3" fill="#1a1a22"/>
+    </g>
+
+    <!-- Rear wing -->
+    <g class="part rear-wing">
+      <rect x="20" y="294" width="160" height="20" rx="3" class="livery-deep"/>
+      <rect x="20" y="294" width="160" height="6" rx="2" class="livery-mid"/>
+      <rect x="36" y="314" width="14" height="22" class="livery-deep"/>
+      <rect x="150" y="314" width="14" height="22" class="livery-deep"/>
+      <rect x="60" y="314" width="80" height="6" class="livery-mid"/>
+    </g>
+
+    <!-- Number plate -->
+    <rect x="80" y="210" width="40" height="20" rx="2" fill="#0a0a0e"/>
+    <text x="100" y="225" class="car-num" text-anchor="middle">07</text>
+
+    <!-- highlights -->
+    <path d="M55 140 L65 140 L60 250 L55 250 Z" fill="rgba(255,255,255,0.12)"/>
+    <path d="M145 140 L135 140 L140 250 L145 250 Z" fill="rgba(0,0,0,0.25)"/>
+  </svg>
+</template>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

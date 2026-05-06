@@ -1,0 +1,11 @@
+node_modules/
+.claude/
+.DS_Store
+.env
+.env.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+dist/
+.cache/
