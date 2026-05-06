@@ -25,6 +25,17 @@ The room code is carried in the URL as `?room=CODE`, so only players with that l
 
 This app needs a Node host that supports WebSockets. GitHub Pages cannot run the multiplayer server by itself.
 
+### Temporary public tunnel
+
+For quick friend testing from your laptop:
+
+```bash
+PORT=3001 npm start
+npm run tunnel
+```
+
+Keep both commands running while friends play. The tunnel URL can change each time you restart it.
+
 ### Render
 
 The included `render.yaml` is ready for Render Blueprint deploys:
