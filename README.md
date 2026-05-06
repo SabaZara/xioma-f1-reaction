@@ -2,6 +2,18 @@
 
 Server-authoritative F1 reaction duel with live WebSocket PvP, private friend rooms, bot practice, solo time attack, demo wallet, and leaderboard.
 
+## Permanent Deploy
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/SabaZara/xioma-f1-reaction)
+
+Use the button above to create a real hosted WebSocket server on Render. After Render finishes building, use the `https://...onrender.com` URL it gives you and share room links like:
+
+```text
+https://YOUR-APP.onrender.com/?room=FRIENDS1
+```
+
+GitHub Pages and Netlify static hosting are not enough for this project because the live PvP queue needs the Node WebSocket server in `server/index.js`.
+
 ## Run locally
 
 ```bash
@@ -25,7 +37,7 @@ The room code is carried in the URL as `?room=CODE`, so only players with that l
 
 This app needs a Node host that supports WebSockets. GitHub Pages cannot run the multiplayer server by itself.
 
-### Temporary public tunnel
+### Temporary public tunnel for local testing only
 
 For quick friend testing from your laptop:
 
