@@ -25,6 +25,9 @@ function client(label, room, action) {
           break;
         case 'match.start':
           console.log(`[${label}] matched vs ${msg.opponent.name}`);
+          if (msg.requiresReady) setTimeout(() => send('player.ready'), 50);
+          break;
+        case 'ready.update':
           break;
         case 'countdown.begin':
           roundToken = msg.roundToken;

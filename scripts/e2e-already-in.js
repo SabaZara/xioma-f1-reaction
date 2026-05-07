@@ -24,6 +24,7 @@ function open(label) {
         case 'match.start':
           log('match start, phase', phase);
           inputSent = false;
+          if (msg.requiresReady) setTimeout(() => ws.send(JSON.stringify({ type: 'player.ready' })), 50);
           break;
         case 'countdown.begin':
           roundToken = msg.roundToken; inputSent = false;

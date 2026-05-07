@@ -29,7 +29,23 @@ const state = {
   audioCtx: null,
 };
 
-const LIVERIES = ['red','blue','silver','green','yellow','magenta'];
+const LIVERIES = [
+  { id: 'scuderia',    label: 'Scuderia Rosso',  team: 'Italian Red' },
+  { id: 'argent',      label: 'Argent',          team: 'Silver Arrow' },
+  { id: 'bavarian',    label: 'Bavarian',        team: 'M-Series Blue' },
+  { id: 'granturismo', label: 'Granturismo',     team: 'Papaya Orange' },
+  { id: 'astra',       label: 'Astra',           team: 'Racing Green' },
+  { id: 'toro',        label: 'Toro',            team: 'Verde Lime' },
+  { id: 'stahl',       label: 'Stahl',           team: 'Quattro Red' },
+  { id: 'sakura',      label: 'Sakura',          team: 'White & Crimson' },
+  { id: 'red',         label: 'Classic Red',     team: 'House' },
+  { id: 'blue',        label: 'Classic Blue',    team: 'House' },
+  { id: 'silver',      label: 'Classic Silver',  team: 'House' },
+  { id: 'green',       label: 'Classic Green',   team: 'House' },
+  { id: 'yellow',      label: 'Classic Yellow',  team: 'House' },
+  { id: 'magenta',     label: 'Classic Magenta', team: 'House' },
+];
+const LIVERY_IDS = LIVERIES.map(l => l.id);
 
 /* ============= boot ============= */
 window.addEventListener('DOMContentLoaded', () => {
@@ -162,17 +178,31 @@ function updateStakeSummary(stake, prefix) {
 
 function initRoomInvite() {
   const urlRoom = normalizeRoomCode(new URLSearchParams(location.search).get('room'));
-  if (urlRoom) setRoomCode(urlRoom, false);
+  if (urlRoom) {
+    setRoomCode(urlRoom, false);
+    toast(`Joined room ${urlRoom}.`);
+  }
 
   $('#btnCreateRoom').addEventListener('click', () => {
     const code = makeRoomCode();
     setRoomCode(code, true);
     copyInviteLink();
+    toast(`Room ${code} created — link copied.`);
   });
   $('#btnCopyInvite').addEventListener('click', copyInviteLink);
   $('#btnLeaveRoom').addEventListener('click', () => {
     setRoomCode('', true);
     toast('Back in public queue.');
+  });
+  $('#btnJoinRoom').addEventListener('click', () => {
+    const code = normalizeRoomCode($('#joinRoomInput').value);
+    if (!code) { toast('Enter a join code.'); return; }
+    setRoomCode(code, true);
+    $('#joinRoomInput').value = '';
+    toast(`Joined room ${code}. Pick a stake to find your friend.`);
+  });
+  $('#joinRoomInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); $('#btnJoinRoom').click(); }
   });
 }
 
@@ -189,8 +219,14 @@ function normalizeRoomCode(code) {
 function setRoomCode(code, updateUrl) {
   state.roomCode = normalizeRoomCode(code);
   $('#roomCodeLabel').textContent = state.roomCode || 'PUBLIC QUEUE';
+  const hint = $('#roomHint');
+  if (hint) hint.textContent = state.roomCode
+    ? 'Only players with this code at the same stake will match you.'
+    : 'Match with anyone at this stake.';
   $('#btnCopyInvite').disabled = !state.roomCode;
   $('#btnLeaveRoom').classList.toggle('hidden', !state.roomCode);
+  const findBtn = $('#btnFindPvP');
+  if (findBtn) findBtn.textContent = state.roomCode ? 'FIND PRIVATE OPPONENT' : 'FIND OPPONENT';
   if (!updateUrl) return;
   const url = new URL(location.href);
   if (state.roomCode) url.searchParams.set('room', state.roomCode);
@@ -255,17 +291,23 @@ function paintWallet() {
 
 /* ============= settings ============= */
 function initSettings() {
-  // livery picker
+  // livery picker — render a mini car + team label per livery
   const wrap = $('#liveryPicker'); wrap.innerHTML = '';
   for (const l of LIVERIES) {
     const sw = document.createElement('button');
     sw.type = 'button';
-    sw.className = 'livery-swatch livery-' + l;
-    sw.style.background = liveryGradient(l);
-    sw.dataset.livery = l;
+    sw.className = 'livery-swatch livery-' + l.id;
+    sw.dataset.livery = l.id;
+    sw.title = `${l.label} · ${l.team}`;
+    const carHolder = document.createElement('div'); carHolder.className = 'livery-car';
+    carHolder.appendChild(makeCarEl(l.id));
+    const meta = document.createElement('div'); meta.className = 'livery-meta';
+    meta.innerHTML = `<div class="livery-name">${l.label}</div><div class="livery-team">${l.team}</div>`;
+    sw.appendChild(carHolder);
+    sw.appendChild(meta);
     sw.addEventListener('click', () => {
-      send('set_livery', { livery: l });
-      paintLiverySelection(l);
+      send('set_livery', { livery: l.id });
+      paintLiverySelection(l.id);
     });
     wrap.appendChild(sw);
   }
@@ -282,12 +324,20 @@ function paintLiverySelection(active) {
 }
 function liveryGradient(l) {
   const map = {
-    red: 'linear-gradient(135deg, #ff2c3a, #6a0d14)',
-    blue: 'linear-gradient(135deg, #5b8cff, #142e6a)',
-    silver: 'linear-gradient(135deg, #c8ccd6, #2c2f3a)',
-    green: 'linear-gradient(135deg, #2bd47d, #0a4a2c)',
-    yellow: 'linear-gradient(135deg, #ffd24a, #6e5611)',
-    magenta: 'linear-gradient(135deg, #ff5ec0, #6a1a4d)',
+    red:         'linear-gradient(135deg, #ff2c3a, #6a0d14)',
+    blue:        'linear-gradient(135deg, #5b8cff, #142e6a)',
+    silver:      'linear-gradient(135deg, #c8ccd6, #2c2f3a)',
+    green:       'linear-gradient(135deg, #2bd47d, #0a4a2c)',
+    yellow:      'linear-gradient(135deg, #ffd24a, #6e5611)',
+    magenta:     'linear-gradient(135deg, #ff5ec0, #6a1a4d)',
+    scuderia:    'linear-gradient(135deg, #ff1c2c, #6b0008)',
+    argent:      'linear-gradient(135deg, #00d2be, #1a2227)',
+    bavarian:    'linear-gradient(135deg, #4f8ad6, #0e2c66)',
+    toro:        'linear-gradient(135deg, #c9e823, #163a0a)',
+    granturismo: 'linear-gradient(135deg, #ff9100, #6b2a00)',
+    stahl:       'linear-gradient(135deg, #cf0a2c, #1c1e22)',
+    astra:       'linear-gradient(135deg, #00a86b, #052e1f)',
+    sakura:      'linear-gradient(135deg, #ffffff, #6a1019)',
   };
   return map[l] || map.red;
 }
@@ -295,16 +345,19 @@ function liveryGradient(l) {
 /* ============= race init ============= */
 function initRace() {
   $('#tapZone').addEventListener('click', sendInput);
+  $('#btnStartRound').addEventListener('click', sendReady);
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
-    if (e.code !== 'Space' && e.code !== 'Enter') return;
     if ($('#overlay-race').classList.contains('hidden')) return;
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    if (e.code !== 'Space' && e.code !== 'Enter') return;
     e.preventDefault();
-    sendInput();
+    if (!$('#readyGate').classList.contains('hidden')) sendReady();
+    else sendInput();
   });
   $('#btnLobby').addEventListener('click', () => {
     $('#resultModal').classList.add('hidden');
+    send('leave_match');
     closeRace();
     showPage('home');
   });
@@ -312,6 +365,15 @@ function initRace() {
     $('#resultModal').classList.add('hidden');
     send('rematch.request');
   });
+}
+
+function sendReady() {
+  if (state.youReady) return;
+  state.youReady = true;
+  $('#btnStartRound').disabled = true;
+  $('#readyStatus').textContent = 'Waiting for opponent…';
+  $('#readyStatus').className = 'ready-status waiting';
+  send('player.ready');
 }
 function closeRace() {
   $('#overlay-race').classList.add('hidden');
@@ -419,6 +481,7 @@ function handleServer(msg) {
     }
     case 'countdown.begin': {
       state.roundToken = msg.roundToken;
+      hideReadyGate();
       runCountdownLights();
       playBeep('low');
       break;
@@ -429,12 +492,29 @@ function handleServer(msg) {
       playBeep('go');
       break;
     }
+    case 'ready.update': {
+      const me = state.playerId;
+      const status = $('#readyStatus');
+      const youReady = msg.playerId === me;
+      if (msg.readyCount >= msg.readyNeeded) {
+        status.textContent = 'Both ready — lights up!'; status.className = 'ready-status go';
+      } else if (youReady) {
+        status.textContent = 'Waiting for opponent…'; status.className = 'ready-status waiting';
+      } else {
+        status.textContent = 'Opponent is ready. Press START.'; status.className = 'ready-status';
+      }
+      break;
+    }
     case 'player.falseStart': {
       onFalseStart(msg.playerId); playBeep('bust');
       break;
     }
     case 'round.void': {
-      toast(`Round void · both invalid (retry ${msg.retry}/3)`); resetArenaForNextRound(); break;
+      toast(`Round void · both invalid (retry ${msg.retry}/3) — press START again`);
+      resetArenaForNextRound();
+      state.youReady = false;
+      showReadyGate({ readyNeeded: msg.readyNeeded, mode: state.match && state.match.mode });
+      break;
     }
     case 'match.result': {
       showResult(msg);
@@ -557,8 +637,11 @@ function lbRow(e, i) {
 function enterMatch(msg) {
   state.match = msg;
   state.balance = msg.balance;
+  state.youReady = false;
+  state.requiresReady = !!msg.requiresReady;
   updateTopStrip();
   $('#overlay-mm').classList.add('hidden');
+  $('#resultModal').classList.add('hidden');
 
   $('#youName').textContent = (msg.you.name || 'YOU') + ' · YOU';
   $('#oppName').textContent = msg.opponent.name;
@@ -569,12 +652,29 @@ function enterMatch(msg) {
   $('#hudPot').textContent = msg.mode === 'solo' ? '—' : fmtMoney(msg.pot);
   $('#hudFee').textContent = msg.mode === 'solo' ? '—' : fmtMoney(msg.feeAmount);
   $('#hudMode').textContent = msg.mode.toUpperCase();
-  $('#hudStatus').textContent = msg.isRematch ? 'REMATCH · GET READY' : 'GET READY';
+  $('#hudStatus').textContent = msg.isRematch ? 'REMATCH · READY UP' : 'READY UP';
   $('#hudStatus').className = 'hud-status';
 
   setLanesCars(msg.you.livery, msg.opponent.livery);
   resetArenaForNextRound();
   $('#overlay-race').classList.remove('hidden');
+  if (state.requiresReady) showReadyGate(msg);
+  else hideReadyGate();
+}
+
+function showReadyGate(msg) {
+  const gate = $('#readyGate'); const tap = $('#tapZone');
+  gate.classList.remove('hidden');
+  tap.classList.add('hidden');
+  $('#btnStartRound').disabled = false;
+  $('#btnStartRound').textContent = (msg && msg.mode === 'solo') ? 'START RUN' : (msg && msg.mode === 'bot') ? 'START ROUND' : 'START ROUND';
+  const needed = (msg && msg.readyNeeded) || (state.match && state.match.readyNeeded) || 1;
+  $('#readyStatus').textContent = needed > 1 ? 'Press START — both drivers must confirm.' : 'Press START to begin.';
+  $('#readyStatus').className = 'ready-status';
+}
+function hideReadyGate() {
+  $('#readyGate').classList.add('hidden');
+  $('#tapZone').classList.remove('hidden');
 }
 
 function resetArenaForNextRound() {
@@ -586,7 +686,9 @@ function resetArenaForNextRound() {
   $$('.light').forEach(l => l.classList.remove('on','go'));
   $('#tapInstruction').textContent = 'GET READY…';
   $('#hudStatus').className = 'hud-status';
-  $('#hudStatus').textContent = 'GET READY';
+  $('#hudStatus').textContent = 'READY UP';
+  $('#youRt').textContent = '—';
+  $('#oppRt').textContent = '—';
 }
 
 function runCountdownLights() {

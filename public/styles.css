@@ -193,7 +193,7 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
 .ks-num { font-family: var(--font-mono); font-size: 20px; font-weight: 700; }
 .ks-lbl { font-size: 9px; letter-spacing: 0.22em; color: var(--ink-3); }
 
-.hero-right { border-radius: var(--radius-3); overflow: hidden; border: 1px solid var(--line); position: relative; min-height: 380px; background: radial-gradient(80% 70% at 50% 90%, #14161e 0%, #06070a 70%); }
+.hero-right { border-radius: var(--radius-3); overflow: hidden; border: 1px solid var(--line); position: relative; min-height: 480px; background: radial-gradient(80% 70% at 50% 90%, #14161e 0%, #06070a 70%); }
 .scene { position: absolute; inset: 0; overflow: hidden; }
 .scene-track {
   position: absolute; inset: 30% 0 0 0;
@@ -225,41 +225,110 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
   0%, 60%, 100% { background: radial-gradient(circle at 35% 30%, #2a2d3a 0%, #0c0d12 70%); box-shadow: none; }
   20%, 50% { background: radial-gradient(circle at 35% 30%, #ff8189 0%, #ff2c3a 60%, #5a0d12 100%); box-shadow: 0 0 18px var(--red-glow); }
 }
-.scene-cars { position: absolute; left: 0; right: 0; bottom: 8%; display: flex; justify-content: center; gap: 16%; align-items: flex-end; }
-.scene-car { width: 130px; height: auto; }
+.scene-cars { position: absolute; left: 0; right: 0; bottom: 6%; display: flex; justify-content: center; gap: 14%; align-items: flex-end; }
+.scene-car { width: 110px; height: auto; }
 .scene-car .f1-car { width: 100%; height: auto; display: block; }
 
 /* ========== F1 CAR (SVG) ========== */
-.f1-car { display: block; }
-.f1-car .car-num { fill: #ffffff; font-family: var(--font-mono); font-size: 14px; font-weight: 700; }
+.f1-car { display: block; filter: drop-shadow(0 18px 24px rgba(0,0,0,0.45)); }
+.f1-car .car-num { fill: #06070a; font-family: var(--font-mono); font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.f1-car .car-sponsor { fill: rgba(255,255,255,0.85); font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.2em; }
+.f1-car .helmet { fill: var(--helmet, #1a1c22); }
+.f1-car .brake-disc { opacity: 0; transition: opacity 220ms ease; }
+.lane.is-launching .brake-disc { opacity: 1; animation: brakeFlare 700ms ease-out; }
+@keyframes brakeFlare { 0% { opacity: 0.2; } 30% { opacity: 1; } 100% { opacity: 0.65; } }
+
+/* wheel spin on launch */
+.lane.is-launching .wheels { animation: wheelMotion 200ms steps(1) infinite; }
+@keyframes wheelMotion {
+  0%, 100% { filter: blur(0); }
+  50% { filter: blur(0.6px); }
+}
+
 /* livery default = red */
+.livery-red { --helmet: #18191f; }
 .livery-red .livery-deep   { fill: #6a0d14; }
 .livery-red .livery-mid    { fill: #c81927; }
 .livery-red .livery-bright { fill: #ff2c3a; }
 
+.livery-blue { --helmet: #0f1422; }
 .livery-blue .livery-deep   { fill: #142e6a; }
 .livery-blue .livery-mid    { fill: #2c54b3; }
 .livery-blue .livery-bright { fill: #5b8cff; }
 
+.livery-silver { --helmet: #1a1d28; }
 .livery-silver .livery-deep   { fill: #2c2f3a; }
 .livery-silver .livery-mid    { fill: #6f7384; }
 .livery-silver .livery-bright { fill: #c8ccd6; }
 
+.livery-green { --helmet: #07271a; }
 .livery-green .livery-deep   { fill: #0a4a2c; }
 .livery-green .livery-mid    { fill: #129552; }
 .livery-green .livery-bright { fill: #2bd47d; }
 
+.livery-yellow { --helmet: #2b220a; }
 .livery-yellow .livery-deep   { fill: #6e5611; }
 .livery-yellow .livery-mid    { fill: #c69820; }
 .livery-yellow .livery-bright { fill: #ffd24a; }
 
+.livery-magenta { --helmet: #2a0e23; }
 .livery-magenta .livery-deep   { fill: #6a1a4d; }
 .livery-magenta .livery-mid    { fill: #b6328d; }
 .livery-magenta .livery-bright { fill: #ff5ec0; }
 
+.livery-ghost { --helmet: #0e1018; }
 .livery-ghost .livery-deep   { fill: #1a1d28; }
 .livery-ghost .livery-mid    { fill: #2c3142; }
 .livery-ghost .livery-bright { fill: #4a4d5d; }
+
+/* ===== Brand-inspired liveries (no trademarked names; inspired-only) ===== */
+/* Scuderia Rosso — Ferrari red */
+.livery-scuderia { --helmet: #1a0708; }
+.livery-scuderia .livery-deep   { fill: #6b0008; }
+.livery-scuderia .livery-mid    { fill: #c40010; }
+.livery-scuderia .livery-bright { fill: #ff1c2c; }
+
+/* Argent — Mercedes silver-arrow */
+.livery-argent { --helmet: #001a18; }
+.livery-argent .livery-deep   { fill: #1a2227; }
+.livery-argent .livery-mid    { fill: #4a565d; }
+.livery-argent .livery-bright { fill: #00d2be; }
+
+/* Bavarian — BMW M motorsport blue/violet/red bars; we render a deep blue base */
+.livery-bavarian { --helmet: #0b1430; }
+.livery-bavarian .livery-deep   { fill: #0e2c66; }
+.livery-bavarian .livery-mid    { fill: #1953a8; }
+.livery-bavarian .livery-bright { fill: #4f8ad6; }
+
+/* Toro — Lamborghini-inspired metallic green/yellow */
+.livery-toro { --helmet: #0a1a06; }
+.livery-toro .livery-deep   { fill: #163a0a; }
+.livery-toro .livery-mid    { fill: #5fa20f; }
+.livery-toro .livery-bright { fill: #c9e823; }
+
+/* Granturismo — McLaren-inspired papaya orange */
+.livery-granturismo { --helmet: #1a0c00; }
+.livery-granturismo .livery-deep   { fill: #6b2a00; }
+.livery-granturismo .livery-mid    { fill: #d35a00; }
+.livery-granturismo .livery-bright { fill: #ff9100; }
+
+/* Stahl — Audi-inspired graphite + electric red */
+.livery-stahl { --helmet: #0b0c10; }
+.livery-stahl .livery-deep   { fill: #1c1e22; }
+.livery-stahl .livery-mid    { fill: #36393f; }
+.livery-stahl .livery-bright { fill: #cf0a2c; }
+
+/* Astra — Aston Martin racing green */
+.livery-astra { --helmet: #02110b; }
+.livery-astra .livery-deep   { fill: #052e1f; }
+.livery-astra .livery-mid    { fill: #0c5d3c; }
+.livery-astra .livery-bright { fill: #00a86b; }
+
+/* Sakura — Honda/JDM white-and-red */
+.livery-sakura { --helmet: #1a0006; }
+.livery-sakura .livery-deep   { fill: #6a1019; }
+.livery-sakura .livery-mid    { fill: #d6d6d6; }
+.livery-sakura .livery-bright { fill: #ffffff; }
 
 /* ========== BUTTONS ========== */
 .btn {
@@ -378,13 +447,23 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
 .stake-summary .prize .val { color: var(--green); }
 
 .invite-box {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px; background: var(--bg-1); border: 1px solid var(--line); border-radius: 12px;
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px 20px;
+  padding: 16px; background: var(--bg-1); border: 1px solid var(--line); border-radius: 12px;
 }
-.invite-label { display: block; font-size: 10px; letter-spacing: 0.2em; color: var(--ink-3); margin-bottom: 5px; }
-.invite-code { font-family: var(--font-mono); font-weight: 800; color: var(--blue-2); letter-spacing: 0.12em; }
+.invite-status { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.invite-label { display: block; font-size: 10px; letter-spacing: 0.2em; color: var(--ink-3); }
+.invite-code { font-family: var(--font-mono); font-weight: 800; color: var(--blue-2); letter-spacing: 0.12em; font-size: 18px; }
+.invite-hint { font-size: 11px; color: var(--ink-3); letter-spacing: 0.04em; }
 .invite-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .invite-actions .btn { padding: 9px 12px; font-size: 11px; }
+.invite-join { grid-column: 1 / -1; display: flex; gap: 8px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.invite-join input {
+  flex: 1; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; color: var(--ink); font-family: var(--font-mono); font-size: 14px;
+  letter-spacing: 0.16em; outline: 0; text-transform: uppercase;
+}
+.invite-join input:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(91,140,255,0.2); }
+.invite-join .btn { padding: 10px 16px; font-size: 11px; }
 
 .solo-best { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .solo-best > div { display: flex; flex-direction: column; gap: 4px; padding: 14px; background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px; }
@@ -457,14 +536,25 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
   border-radius: 8px; color: var(--ink); font-size: 13px; outline: 0;
 }
 .field input:focus { border-color: var(--line-2); }
-.liveries { display: flex; gap: 8px; flex-wrap: wrap; }
+.liveries { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 10px; }
 .livery-swatch {
-  width: 38px; height: 38px; border-radius: 10px;
+  border-radius: 12px;
   border: 2px solid var(--line); cursor: pointer;
-  transition: transform 120ms ease, border-color 120ms ease;
+  background: linear-gradient(180deg, #14161e 0%, #06070a 100%);
+  padding: 10px 8px 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 200ms ease;
+  overflow: hidden;
+  text-align: center;
+  font-family: inherit;
 }
-.livery-swatch:hover { transform: scale(1.06); }
-.livery-swatch.active { border-color: var(--ink); box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3px var(--red); }
+.livery-swatch .livery-car { width: 60px; }
+.livery-swatch .f1-car { width: 100%; height: auto; filter: none; }
+.livery-swatch .livery-meta { width: 100%; }
+.livery-swatch .livery-name { font-size: 11px; font-weight: 700; color: var(--ink); letter-spacing: 0.04em; }
+.livery-swatch .livery-team { font-size: 9px; color: var(--ink-3); letter-spacing: 0.16em; margin-top: 2px; text-transform: uppercase; }
+.livery-swatch:hover { transform: translateY(-2px); border-color: var(--line-2); }
+.livery-swatch.active { border-color: var(--red); box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3px var(--red), 0 14px 24px rgba(255,44,58,0.3); }
 .toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .toggle input { width: 16px; height: 16px; accent-color: var(--red); }
 .hint { font-size: 12px; color: var(--ink-3); line-height: 1.6; }
@@ -527,16 +617,51 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
 .light.on { background: radial-gradient(circle at 35% 30%, #ff9da4 0%, #ff2c3a 50%, #770e16 100%); box-shadow: 0 0 36px var(--red-glow), inset 0 0 14px rgba(255,255,255,0.25); }
 .light.go { background: radial-gradient(circle at 50% 50%, #0a0b0f 0%, #07080b 70%); box-shadow: inset 0 0 16px rgba(0,0,0,0.9); }
 
-.cars-arena { position: absolute; left: 0; right: 0; bottom: 7%; display: flex; justify-content: center; gap: 14%; z-index: 3; pointer-events: none; }
-.lane { position: relative; width: 16%; max-width: 150px; }
+.cars-arena { position: absolute; left: 0; right: 0; bottom: 4%; display: flex; justify-content: center; gap: 12%; z-index: 3; pointer-events: none; }
+.lane { position: relative; width: 13%; max-width: 130px; }
 .lane .f1-car { width: 100%; height: auto; transition: transform 1.4s cubic-bezier(.2,.65,.2,1), filter 1.4s ease; }
-.lane.is-launching .f1-car { transform: translateY(-280%) scale(0.78); }
-.lane.is-loser .f1-car { transform: translateY(-160%) scale(0.82); filter: brightness(0.6) saturate(0.7); }
+.lane.is-launching .f1-car { transform: translateY(-160%) scale(0.78); }
+.lane.is-loser .f1-car { transform: translateY(-95%) scale(0.84); filter: brightness(0.55) saturate(0.7); }
+
+/* tire smoke on launch */
+.lane::before, .lane::after {
+  content: ""; position: absolute; bottom: -4%;
+  width: 28%; height: 18%;
+  background: radial-gradient(ellipse at 50% 80%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.10) 50%, transparent 80%);
+  filter: blur(6px);
+  opacity: 0; transition: opacity 200ms ease;
+  pointer-events: none;
+}
+.lane::before { left: 4%; }
+.lane::after { right: 4%; }
+.lane.is-launching::before, .lane.is-launching::after { opacity: 1; animation: smokePuff 1.2s ease-out forwards; }
+@keyframes smokePuff {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  20% { opacity: 0.95; }
+  100% { transform: translateY(60px) scale(1.6); opacity: 0; }
+}
 
 .finish-line { position: absolute; left: 0; right: 0; top: 36%; height: 6px; background: repeating-linear-gradient(90deg, #fff 0 14px, #000 14px 28px); opacity: 0; transform: scaleX(0.6); transition: opacity 300ms ease, transform 300ms ease; }
 .arena.is-finish .finish-line { opacity: 0.85; transform: scaleX(1); }
 
+.ready-gate {
+  position: absolute; inset: 0; z-index: 12;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 32px;
+  background: radial-gradient(50% 60% at 50% 50%, rgba(8,9,12,0.92) 0%, rgba(8,9,12,0.78) 70%, rgba(8,9,12,0.55) 100%);
+  backdrop-filter: blur(4px);
+  text-align: center;
+}
+.ready-gate.hidden { display: none; }
+.ready-eyebrow { font-size: 11px; letter-spacing: 0.32em; font-weight: 700; color: var(--red-2); }
+.ready-title { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+.ready-hint { margin: 0; font-size: 13px; color: var(--ink-2); max-width: 460px; line-height: 1.5; }
+.ready-status { font-size: 11px; letter-spacing: 0.22em; color: var(--ink-3); margin-top: 6px; min-height: 14px; }
+.ready-status.waiting { color: var(--amber); }
+.ready-status.go { color: var(--green); }
+
 .tap-zone { position: absolute; inset: 0; background: transparent; border: 0; outline: 0; cursor: pointer; z-index: 10; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 24px; }
+.tap-zone.hidden { display: none; }
 .tap-instruction { font-weight: 700; letter-spacing: 0.32em; font-size: 12px; color: var(--ink-2); background: rgba(8,9,12,0.7); padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line); backdrop-filter: blur(6px); }
 .arena.is-armed .tap-instruction { color: var(--red-2); border-color: var(--red); }
 .arena.is-go .tap-instruction { color: var(--green); border-color: var(--green); box-shadow: 0 0 24px var(--green-glow); }

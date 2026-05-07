@@ -41,6 +41,11 @@ function makeClient(label, plan) {
           break;
         case 'match.start':
           log('match start mode=', msg.mode, 'vs', msg.opponent.name, 'pot=', msg.pot);
+          if (msg.requiresReady) {
+            setTimeout(() => ws.send(JSON.stringify({ type: 'player.ready' })), 50);
+          }
+          break;
+        case 'ready.update':
           break;
         case 'countdown.begin':
           roundToken = msg.roundToken;

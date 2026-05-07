@@ -186,32 +186,47 @@ function createMatch(a, b, stake, mode) {
     feeAmount: mode === 'solo' ? 0 : +(stake * 2 * CONFIG.feePercent).toFixed(2),
     payout: mode === 'solo' ? 0 : +(stake * 2 * (1 - CONFIG.feePercent)).toFixed(2),
     players: [a, b].filter(Boolean),
-    state: 'ready',
+    state: 'awaiting_ready',
     falseStartRetries: 0,
     seed: crypto.randomBytes(8).toString('hex'),
     createdAt: Date.now(),
     rematchVotes: new Set(),
+    readyVotes: new Set(),
     history: [],
   };
   matches.set(matchId, match);
   for (const p of match.players) p.matchId = matchId;
 
+  emitMatchStart(match);
+  // No auto-start — wait for player.ready from each human.
+}
+
+function emitMatchStart(match) {
   for (const p of match.players) {
     if (p.isBot) continue;
     const opp = match.players.find(x => x.id !== p.id) || { id: 'solo', name: 'TIME-ATTACK' };
     send_ws(p.ws, 'match.start', {
-      matchId, mode, stake,
+      matchId: match.id, mode: match.mode, stake: match.stake,
       pot: match.pot,
       feePercent: match.feePercent,
       feeAmount: match.feeAmount,
       payout: match.payout,
       you: { id: p.id, name: p.name, livery: p.livery || 'red' },
-      opponent: { id: opp.id, name: opp.name, livery: (opp.livery || (mode === 'pvp' ? 'blue' : (mode === 'bot' ? 'silver' : 'ghost'))) },
+      opponent: { id: opp.id, name: opp.name, livery: (opp.livery || (match.mode === 'pvp' ? 'blue' : (match.mode === 'bot' ? 'silver' : 'ghost'))) },
       balance: p.balance,
+      requiresReady: true,
+      readyCount: match.readyVotes.size,
+      readyNeeded: match.players.filter(x => !x.isBot).length,
     });
   }
+}
 
-  setTimeout(() => beginRound(match), 1500);
+function tryStartRound(match) {
+  if (match.state !== 'awaiting_ready') return;
+  const humans = match.players.filter(p => !p.isBot);
+  if (match.readyVotes.size < humans.length) return;
+  match.readyVotes.clear();
+  beginRound(match);
 }
 
 function startSoloMatch(player) {
@@ -419,13 +434,16 @@ function finalizeRound(match, opts = {}) {
       voidAndRefund(match, 'repeated_false_starts');
       return;
     }
-    match.state = 'void_round';
+    // Reset to awaiting_ready so both players must press READY again before retry.
+    match.state = 'awaiting_ready';
+    match.readyVotes.clear();
     broadcastMatch(match, 'round.void', {
       matchId: match.id,
       reason: 'both_invalid',
       retry: match.falseStartRetries,
+      readyCount: 0,
+      readyNeeded: match.players.filter(p => !p.isBot).length,
     });
-    setTimeout(() => beginRound(match), 1500);
     return;
   }
 
@@ -586,7 +604,7 @@ function handleDisconnect(player) {
   if (match.state === 'resolved' || match.state === 'voided') return;
   const opponent = match.players.find(p => p.id !== player.id);
   if (!opponent || opponent.isBot) { cleanupMatch(match); return; }
-  if (match.state === 'ready' || match.state === 'countdown') {
+  if (match.state === 'awaiting_ready' || match.state === 'ready' || match.state === 'countdown') {
     opponent.balance += match.stake;
     send_ws(opponent.ws, 'match.refund', {
       matchId: match.id,
@@ -667,7 +685,10 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'set_livery': {
-        const allowed = ['red', 'blue', 'silver', 'green', 'yellow', 'magenta'];
+        const allowed = [
+          'red', 'blue', 'silver', 'green', 'yellow', 'magenta',
+          'scuderia', 'argent', 'bavarian', 'toro', 'granturismo', 'stahl', 'astra', 'sakura',
+        ];
         if (allowed.includes(msg.livery)) player.livery = msg.livery;
         send_ws(ws, 'profile', { name: player.name, balance: player.balance, livery: player.livery });
         break;
@@ -743,6 +764,21 @@ wss.on('connection', (ws) => {
         recordInput(match, player, Number(msg.clientTs) || Date.now());
         break;
       }
+      case 'player.ready': {
+        if (!player.matchId) break;
+        const match = matches.get(player.matchId);
+        if (!match) break;
+        if (match.state !== 'awaiting_ready') break;
+        match.readyVotes.add(player.id);
+        broadcastMatch(match, 'ready.update', {
+          readyCount: match.readyVotes.size,
+          readyNeeded: match.players.filter(p => !p.isBot).length,
+          readyByYou: true,
+          playerId: player.id,
+        });
+        tryStartRound(match);
+        break;
+      }
       case 'rematch.request': {
         const lookupId = player.matchId || player.lastMatchId;
         if (!lookupId) break;
@@ -768,31 +804,14 @@ wss.on('connection', (ws) => {
             break;
           }
           match.rematchVotes.clear();
-          match.state = 'ready';
+          match.readyVotes.clear();
+          match.state = 'awaiting_ready';
           match.falseStartRetries = 0;
           pA.balance -= match.stake;
           pB.balance -= match.stake;
-          // Reattach players to this match
           pA.matchId = match.id;
           pB.matchId = match.id;
-          for (const p of match.players) {
-            if (p.isBot) continue;
-            const opp = match.players.find(x => x.id !== p.id);
-            send_ws(p.ws, 'match.start', {
-              matchId: match.id,
-              mode: match.mode,
-              stake: match.stake,
-              pot: match.pot,
-              feePercent: match.feePercent,
-              feeAmount: match.feeAmount,
-              payout: match.payout,
-              you: { id: p.id, name: p.name, livery: p.livery || 'red' },
-              opponent: { id: opp.id, name: opp.name, livery: opp.livery || 'blue' },
-              balance: p.balance,
-              isRematch: true,
-            });
-          }
-          setTimeout(() => beginRound(match), 1500);
+          emitMatchStart(match);
         }
         break;
       }
