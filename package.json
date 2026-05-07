@@ -9,6 +9,7 @@
     "dev": "node server/index.js",
     "smoke": "node scripts/e2e.js",
     "smoke:rematch": "node scripts/e2e-already-in.js",
+    "smoke:rematch-button": "node scripts/e2e-rematch.js",
     "smoke:room": "node scripts/e2e-room.js",
     "tunnel": "npx --yes localtunnel --port ${PORT:-3000}"
   },

@@ -532,7 +532,16 @@ function handleServer(msg) {
       break;
     }
     case 'rematch.failed': {
-      toast(prettyReason(msg.reason)); closeRace();
+      // If the opponent left, auto-requeue at the same stake so the player
+      // doesn't have to step back through stake selection.
+      if (msg.reason === 'opponent_left' && msg.stake) {
+        toast('Opponent left — finding a new opponent…');
+        closeRace();
+        send('matchmaking.join', { stake: msg.stake, room: state.roomCode });
+      } else {
+        toast(prettyReason(msg.reason));
+        closeRace();
+      }
       break;
     }
   }
@@ -545,9 +554,12 @@ function prettyReason(r) {
     invalid_amount: 'Invalid amount.',
     already_in_match: 'You are already in a match.',
     opponent_disconnected: 'Opponent disconnected.',
+    opponent_left: 'Opponent left the match.',
     repeated_false_starts: 'Match cancelled · repeated false starts.',
     both_invalid: 'Both invalid · restarting.',
     timeout: 'Reaction timeout.',
+    no_match: 'No active match to rematch.',
+    match_expired: 'That match has expired.',
   };
   return map[r] || r;
 }
@@ -782,6 +794,20 @@ function showResult(msg) {
       playBeep('bust');
     } else {
       card.classList.add('void'); $('#resultBanner').textContent = 'VOID';
+    }
+
+    // Set the action button label based on mode for clarity.
+    // Solo/Bot: instant "Play Again". PvP: "Rematch" (needs opponent vote).
+    const btn = $('#btnRematch');
+    if (msg.mode === 'pvp') {
+      btn.textContent = 'REMATCH';
+      btn.title = 'Both players must accept to start the next round.';
+    } else if (msg.mode === 'bot') {
+      btn.textContent = 'PLAY AGAIN';
+      btn.title = 'Race the bot again at the same stake.';
+    } else {
+      btn.textContent = 'RUN AGAIN';
+      btn.title = 'Start another time-attack run.';
     }
 
     $('#resultModal').classList.remove('hidden');

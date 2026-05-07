@@ -781,9 +781,15 @@ wss.on('connection', (ws) => {
       }
       case 'rematch.request': {
         const lookupId = player.matchId || player.lastMatchId;
-        if (!lookupId) break;
+        if (!lookupId) {
+          send_ws(ws, 'rematch.failed', { reason: 'no_match' });
+          break;
+        }
         const match = matches.get(lookupId);
-        if (!match) break;
+        if (!match) {
+          send_ws(ws, 'rematch.failed', { reason: 'match_expired' });
+          break;
+        }
         if (match.state !== 'resolved') break;
         // For bot/solo, instant rematch — start a fresh match
         if (match.mode === 'bot' || match.mode === 'solo') {
@@ -793,6 +799,13 @@ wss.on('connection', (ws) => {
           }
           if (match.mode === 'bot') startBotMatch(player, match.stake);
           else startSoloMatch(player);
+          break;
+        }
+        // PvP: if the opponent is no longer connected, fall back to a new
+        // public match at the same stake so the player isn't stuck.
+        const opp = match.players.find(p => p.id !== player.id);
+        if (!opp || !opp.ws || opp.ws.readyState !== opp.ws.OPEN) {
+          send_ws(ws, 'rematch.failed', { reason: 'opponent_left', stake: match.stake });
           break;
         }
         match.rematchVotes.add(player.id);
