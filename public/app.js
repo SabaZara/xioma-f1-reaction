@@ -488,6 +488,9 @@ function handleServer(msg) {
     }
     case 'lights.green': {
       state.greenAtServer = msg.serverNow;
+      // Wall clock at the *client* the moment we saw the green packet.
+      // Used to compute the user's true reaction time without network bias.
+      state.greenAtClient = performance.now();
       onGreenLight();
       playBeep('go');
       break;
@@ -692,6 +695,7 @@ function hideReadyGate() {
 function resetArenaForNextRound() {
   state.inputSent = false;
   state.greenAtServer = null;
+  state.greenAtClient = null;
   state.lightsTimers.forEach(clearTimeout); state.lightsTimers = [];
   $('#arena').classList.remove('is-armed','is-go','is-finish');
   $$('.lane').forEach(l => l.classList.remove('is-launching','is-loser'));
@@ -731,7 +735,16 @@ function onFalseStart(playerId) {
 }
 function sendInput() {
   if (state.inputSent) return; state.inputSent = true;
-  send('player.input', { roundToken: state.roundToken, clientTs: Date.now() });
+  // Client-measured reaction time, in ms. Null if we tapped before green
+  // (server still treats early taps as false-starts).
+  const clientReactionMs = state.greenAtClient != null
+    ? Math.max(0, Math.round(performance.now() - state.greenAtClient))
+    : null;
+  send('player.input', {
+    roundToken: state.roundToken,
+    clientTs: Date.now(),
+    clientReactionMs,
+  });
 }
 
 function showResult(msg) {

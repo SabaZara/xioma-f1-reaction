@@ -325,15 +325,39 @@ function fireGreenLight(match) {
   });
 }
 
-function recordInput(match, player, clientTs) {
+function recordInput(match, player, clientTs, clientReactionMs) {
   if (match.inputs.has(player.id)) return;
   const serverTs = Date.now();
   const isFalseStart = match.state !== 'green' || serverTs < match.greenAtServer;
-  const reactionTime = isFalseStart ? null : Math.max(0, serverTs - match.greenAtServer);
+
+  // Server-measured reaction = round trip. Includes one-way trip for the
+  // 'lights.green' broadcast plus one-way trip back for the input.
+  const serverRoundTripRT = isFalseStart
+    ? null
+    : Math.max(0, serverTs - match.greenAtServer);
+
+  // Client-measured reaction = the user's actual reaction (no network bias)
+  // captured locally as performance.now() at green and at tap.
+  // Validate to prevent cheating: it must be >= 0 and cannot be GREATER
+  // than the server-observed round trip (network can only add, not subtract).
+  // Allow a tiny clock-skew tolerance (10ms).
+  let reactionTime = serverRoundTripRT;
+  let usedClientRT = false;
+  if (!isFalseStart && clientReactionMs != null) {
+    const cap = serverRoundTripRT + 10; // skew tolerance
+    if (clientReactionMs >= 0 && clientReactionMs <= cap) {
+      reactionTime = Math.round(clientReactionMs);
+      usedClientRT = true;
+    }
+  }
+
   match.inputs.set(player.id, {
     playerId: player.id,
     inputTimestampClient: clientTs,
     inputTimestampServer: serverTs,
+    clientReactionMs: clientReactionMs == null ? null : Math.round(clientReactionMs),
+    serverRoundTripRT,
+    usedClientRT,
     isFalseStart,
     reactionTime,
   });
@@ -761,7 +785,9 @@ wss.on('connection', (ws) => {
         if (!match) break;
         if (msg.roundToken !== match.roundToken) break;
         if (match.state !== 'countdown' && match.state !== 'green' && match.state !== 'awaiting_inputs') break;
-        recordInput(match, player, Number(msg.clientTs) || Date.now());
+        const clientReactionMs = (typeof msg.clientReactionMs === 'number' && Number.isFinite(msg.clientReactionMs))
+          ? msg.clientReactionMs : null;
+        recordInput(match, player, Number(msg.clientTs) || Date.now(), clientReactionMs);
         break;
       }
       case 'player.ready': {

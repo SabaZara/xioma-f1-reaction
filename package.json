@@ -11,6 +11,7 @@
     "smoke:rematch": "node scripts/e2e-already-in.js",
     "smoke:rematch-button": "node scripts/e2e-rematch.js",
     "smoke:room": "node scripts/e2e-room.js",
+    "smoke:latency": "node scripts/e2e-latency.js",
     "tunnel": "npx --yes localtunnel --port ${PORT:-3000}"
   },
   "dependencies": {
