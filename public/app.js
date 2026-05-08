@@ -27,6 +27,15 @@ const state = {
   daily: null,
   page: 'home',
   audioCtx: null,
+  // Battleship
+  bs: {
+    arenas: [],
+    selectedArenaId: null,
+    boardSize: 10,
+    fleet: [],
+    match: null,        // most recent state snapshot
+    pendingTarget: null, // { x, y } picked but not yet locked
+  },
 };
 
 const LIVERIES = [
@@ -55,6 +64,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initWallet();
   initSettings();
   initRace();
+  initBattleship();
   connect();
 });
 
@@ -102,22 +112,25 @@ function showPage(name) {
   const el = $('#page-' + name);
   if (el) el.classList.remove('hidden');
   $$('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.nav === name));
-  const titles = { home: 'Home', play: 'Play', leaderboard: 'Leaderboard', profile: 'Profile', wallet: 'Wallet', settings: 'Settings' };
+  const titles = {
+    home: 'Home',
+    play: 'F1 Reaction',
+    battleship: 'Battleship',
+    leaderboard: 'Leaderboard',
+    profile: 'Profile',
+    wallet: 'Wallet',
+    settings: 'Settings',
+  };
   $('#pageTitle').textContent = titles[name] || name;
   if (name === 'leaderboard') send('request.leaderboard');
   if (name === 'profile') send('request.stats');
   if (name === 'home') paintHomeScene();
+  if (name === 'battleship') paintBsArenaList();
 }
 
 /* ============= hero / home ============= */
 function initHero() {
-  $$('.quick-card').forEach(c => {
-    c.addEventListener('click', () => {
-      const m = c.dataset.mode;
-      showPage('play');
-      activateModeTab(m);
-    });
-  });
+  // .game-card buttons use data-nav; the global nav listener handles them.
   paintHomeScene();
 }
 
@@ -414,6 +427,7 @@ function handleServer(msg) {
       $('#playerIdShort').textContent = state.playerId.slice(-6).toUpperCase();
       $('#hsFee').textContent = Math.round(state.config.feePercent * 100) + '%';
       $('#pvpFeePct').textContent = Math.round(state.config.feePercent * 100) + '%';
+      $('#bsFeePct').textContent = Math.round(state.config.feePercent * 100) + '%';
       buildStakeTiers('#pvpTiers', (a) => { state.pvpStake = a; updateStakeSummary(a, 'pvp'); $('#btnFindPvP').disabled = false; });
       buildStakeTiers('#botTiers', (a) => { state.botStake = a; updateStakeSummary(a, 'bot'); $('#btnPlayBot').disabled = false; });
       paintLiverySelection(state.livery);
@@ -428,6 +442,36 @@ function handleServer(msg) {
       paintSoloStats();
       paintDaily();
       updateTopStrip();
+      bsHandleHello(msg);
+      break;
+    }
+    case 'battleship.state': {
+      // First time we get this we may be entering placement.
+      if (!state.bs.match || state.bs.match.matchId !== msg.matchId) openBsMatch(msg);
+      else refreshBsMatch(msg);
+      break;
+    }
+    case 'battleship.combat_begin': {
+      refreshBsMatch(msg);
+      toast('Combat begun.');
+      break;
+    }
+    case 'battleship.round_result': {
+      const r = msg.reveal || {};
+      const yourCoord = cellToCoord(r.yourShot || {});
+      const oppCoord = cellToCoord(r.opponentShot || {});
+      const yourStatus = r.yourShot && r.yourShot.skipped ? 'NO SHOT' : (r.yourShot && r.yourShot.hit ? 'HIT' : 'MISS');
+      const oppStatus = r.opponentShot && r.opponentShot.skipped ? 'NO SHOT' : (r.opponentShot && r.opponentShot.hit ? 'HIT' : 'MISS');
+      paintBsShots(yourCoord, oppCoord, yourStatus, oppStatus);
+      refreshBsMatch(msg);
+      break;
+    }
+    case 'battleship.match_result': {
+      bsShowMatchResult(msg);
+      break;
+    }
+    case 'battleship.error': {
+      toast(prettyReason(msg.reason));
       break;
     }
     case 'pong': {
@@ -563,6 +607,11 @@ function prettyReason(r) {
     timeout: 'Reaction timeout.',
     no_match: 'No active match to rematch.',
     match_expired: 'That match has expired.',
+    invalid_arena: 'Pick a valid arena.',
+    invalid_cell: 'That cell is off the grid.',
+    already_targeted: 'Already targeted that cell.',
+    already_locked: 'Already locked in.',
+    wrong_state: 'Cannot do that right now.',
   };
   return map[r] || r;
 }
@@ -862,4 +911,337 @@ function playBeep(kind) {
   o.type = type; o.frequency.setValueAtTime(freq, t);
   g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.start(t); o.stop(t + dur);
+}
+
+/* =====================================================================
+   BATTLESHIP — client logic
+   ===================================================================== */
+
+function initBattleship() {
+  $('#bsBackBtn').addEventListener('click', () => {
+    send('leave_match');
+    $('#overlay-bsmatch').classList.add('hidden');
+    showPage('battleship');
+  });
+  $('#btnBsFind').addEventListener('click', () => {
+    if (!state.bs.selectedArenaId) return;
+    const arena = state.bs.arenas.find(a => a.id === state.bs.selectedArenaId);
+    if (!arena) return;
+    if (state.balance < arena.stake) return toast('Insufficient balance — top up in Wallet.');
+    send('matchmaking.join', { game: 'battleship', arenaId: arena.id });
+  });
+  $('#btnBsShuffle').addEventListener('click', () => send('battleship.shuffle'));
+  $('#btnBsLockPlacement').addEventListener('click', () => send('battleship.lock_placement'));
+  $('#btnBsLobby').addEventListener('click', () => {
+    $('#bsResultModal').classList.add('hidden');
+    $('#overlay-bsmatch').classList.add('hidden');
+    showPage('battleship');
+  });
+  $('#btnBsRematch').addEventListener('click', () => {
+    $('#bsResultModal').classList.add('hidden');
+    // For PvP we re-queue at the same arena instead of needing both votes —
+    // simpler UX; opponent likely already left to lobby.
+    if (state.bs.match && state.bs.match.arenaId) {
+      send('matchmaking.join', { game: 'battleship', arenaId: state.bs.match.arenaId });
+    } else {
+      showPage('battleship');
+    }
+  });
+}
+
+function paintBsArenaList() {
+  const list = $('#bsArenaList');
+  if (!list) return;
+  list.innerHTML = '';
+  for (const arena of state.bs.arenas) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'bs-arena-card';
+    if (state.bs.selectedArenaId === arena.id) card.classList.add('selected');
+    card.innerHTML = `
+      <div class="bs-arena-icon">${arenaIconSvg(arena.id)}</div>
+      <div class="bs-arena-name">${arena.name}</div>
+      <div class="bs-arena-stake">$${arena.stake}</div>
+      <div class="bs-arena-meta">PVP · 6% FEE</div>
+    `;
+    card.addEventListener('click', () => selectBsArena(arena.id));
+    list.appendChild(card);
+  }
+}
+
+function selectBsArena(arenaId) {
+  state.bs.selectedArenaId = arenaId;
+  paintBsArenaList();
+  const arena = state.bs.arenas.find(a => a.id === arenaId);
+  if (!arena) return;
+  const pot = arena.stake * 2;
+  const fee = +(pot * (state.config.feePercent || 0.06)).toFixed(2);
+  const prize = +(pot - fee).toFixed(2);
+  $('#bsStake').textContent = '$' + arena.stake.toFixed(2);
+  $('#bsPot').textContent = '$' + pot.toFixed(2);
+  $('#bsFee').textContent = '$' + fee.toFixed(2);
+  $('#bsPrize').textContent = '$' + prize.toFixed(2);
+  $('#btnBsFind').disabled = false;
+}
+
+function arenaIconSvg(id) {
+  const map = {
+    arctic:   '<svg viewBox="0 0 64 36"><polygon points="0,30 14,10 22,18 32,4 44,16 54,8 64,30" fill="#cfd6e8" stroke="#6b7595" stroke-width="0.8"/><line x1="0" y1="34" x2="64" y2="34" stroke="#6b7595" stroke-width="0.6"/></svg>',
+    coral:    '<svg viewBox="0 0 64 36"><circle cx="14" cy="22" r="6" fill="#5fa66c"/><circle cx="44" cy="20" r="9" fill="#5fa66c"/><line x1="0" y1="30" x2="64" y2="30" stroke="#7e9bbf" stroke-width="0.6"/><polyline points="6,32 12,32 18,32 24,32 30,32 36,32 42,32 48,32 54,32 60,32" stroke="#7e9bbf" stroke-width="0.4" fill="none" stroke-dasharray="2,3"/></svg>',
+    biscay:   '<svg viewBox="0 0 64 36"><path d="M0,24 L14,18 L18,22 L26,8 L34,20 L38,16 L46,22 L52,18 L64,24 L64,36 L0,36 Z" fill="#6b7595" stroke="#454f6b" stroke-width="0.6"/><circle cx="50" cy="6" r="2" fill="#ffd24a"/></svg>',
+    atlantic: '<svg viewBox="0 0 64 36"><path d="M0,18 q4,-4 8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0" fill="none" stroke="#5b8cff" stroke-width="0.8"/><path d="M0,26 q4,-4 8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0" fill="none" stroke="#5b8cff" stroke-width="0.8"/><rect x="20" y="10" width="20" height="3" fill="#9aa0b3"/><rect x="28" y="6" width="6" height="4" fill="#9aa0b3"/></svg>',
+    pacific:  '<svg viewBox="0 0 64 36"><path d="M0,16 q4,-3 8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0" fill="none" stroke="#5b8cff" stroke-width="0.7"/><polygon points="20,30 44,30 38,18 26,18" fill="#fff" stroke="#454f6b" stroke-width="0.6"/><line x1="32" y1="18" x2="32" y2="6" stroke="#454f6b" stroke-width="0.6"/><polygon points="32,8 38,16 32,16" fill="#5b8cff"/></svg>',
+    red:      '<svg viewBox="0 0 64 36"><polygon points="0,28 18,22 26,30 36,18 50,28 64,22 64,36 0,36" fill="#cf6e3c" stroke="#8b3f1c" stroke-width="0.6"/><circle cx="48" cy="8" r="3" fill="#ffb547"/></svg>',
+    black:    '<svg viewBox="0 0 64 36"><path d="M14,24 q-4,-12 8,-14 q8,2 8,12" fill="none" stroke="#3a4474" stroke-width="2"/><path d="M40,28 q4,-14 16,-12" fill="none" stroke="#3a4474" stroke-width="2"/><line x1="0" y1="32" x2="64" y2="32" stroke="#3a4474" stroke-width="0.6"/></svg>',
+  };
+  return map[id] || map.atlantic;
+}
+
+function bsHandleHello(msg) {
+  if (msg.config && msg.config.battleship) {
+    state.bs.arenas = msg.config.battleship.arenas || [];
+    state.bs.boardSize = msg.config.battleship.boardSize || 10;
+    state.bs.fleet = msg.config.battleship.fleet || [];
+  }
+}
+
+function openBsMatch(snap) {
+  state.bs.match = snap;
+  state.bs.pendingTarget = null;
+  $('#overlay-bsmatch').classList.remove('hidden');
+  $('#overlay-mm').classList.add('hidden');
+  $('#bsArenaName').textContent = snap.arenaName || '—';
+  $('#bsArenaStake').textContent = '$' + snap.stake;
+  $('#bsRoundNum').textContent = snap.round || 0;
+  $('#bsYouName').textContent = (state.name || 'YOU').toUpperCase();
+  $('#bsOppName').textContent = (snap.opponent.name || 'OPPONENT').toUpperCase();
+  $('#bsYouBalance').textContent = '$' + state.balance.toFixed(2);
+  $('#bsOppBalance').textContent = '$' + snap.stake.toFixed(2);
+  paintBsBoards(snap);
+  paintBsFleet(snap);
+  paintBsControls(snap);
+  paintBsMidStatus(snap);
+  paintBsShots(null, null);
+}
+
+function refreshBsMatch(snap) {
+  state.bs.match = snap;
+  $('#bsRoundNum').textContent = snap.round || 0;
+  paintBsBoards(snap);
+  paintBsFleet(snap);
+  paintBsControls(snap);
+  paintBsMidStatus(snap);
+}
+
+function paintBsBoards(snap) {
+  const boardYou = $('#bsBoardYou');
+  const boardOpp = $('#bsBoardOpp');
+  const N = state.bs.boardSize;
+  // YOU board: render owned ship cells + opponent's shots at me
+  boardYou.innerHTML = '';
+  const youCellEls = {};
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const c = document.createElement('div');
+      c.className = 'bs-cell';
+      c.dataset.x = x; c.dataset.y = y;
+      youCellEls[`${x},${y}`] = c;
+      boardYou.appendChild(c);
+    }
+  }
+  for (const ship of snap.you.ships) {
+    for (const cell of ship.cells) {
+      const el = youCellEls[`${cell.x},${cell.y}`];
+      if (el) el.classList.add('bs-cell-ship');
+    }
+  }
+  for (const shot of snap.you.shotsAtMe) {
+    const el = youCellEls[`${shot.x},${shot.y}`];
+    if (el) el.classList.add(shot.hit ? 'bs-cell-hit' : 'bs-cell-miss');
+  }
+
+  // OPPONENT board: only my shots are visible. Click to target during 'playing'.
+  boardOpp.innerHTML = '';
+  const oppCellEls = {};
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const c = document.createElement('div');
+      c.className = 'bs-cell';
+      c.dataset.x = x; c.dataset.y = y;
+      oppCellEls[`${x},${y}`] = c;
+      if (snap.state === 'playing' && !snap.pending.youLockedIn) {
+        c.addEventListener('click', () => bsTargetCell(x, y));
+      }
+      boardOpp.appendChild(c);
+    }
+  }
+  for (const shot of snap.opponent.myShots) {
+    const el = oppCellEls[`${shot.x},${shot.y}`];
+    if (el) el.classList.add(shot.hit ? 'bs-cell-hit' : 'bs-cell-miss');
+  }
+  // Highlight pending target if any
+  if (state.bs.pendingTarget) {
+    const { x, y } = state.bs.pendingTarget;
+    const el = oppCellEls[`${x},${y}`];
+    if (el) el.classList.add('bs-cell-target');
+  }
+}
+
+function paintBsFleet(snap) {
+  const youFleet = $('#bsFleetYou');
+  const oppFleet = $('#bsFleetOpp');
+  youFleet.innerHTML = '';
+  oppFleet.innerHTML = '';
+  for (const ship of snap.you.ships) {
+    const pip = document.createElement('span');
+    pip.className = 'bs-fleet-pip' + (ship.sunk ? ' sunk' : '');
+    pip.textContent = `${ship.name.toUpperCase()} ${ship.length}`;
+    youFleet.appendChild(pip);
+  }
+  for (const ship of snap.opponent.shipsSummary) {
+    const pip = document.createElement('span');
+    pip.className = 'bs-fleet-pip' + (ship.sunk ? ' sunk' : '');
+    pip.textContent = `${ship.name.toUpperCase()} ${ship.length}`;
+    oppFleet.appendChild(pip);
+  }
+}
+
+function paintBsControls(snap) {
+  const ctrl = $('#bsControls');
+  ctrl.innerHTML = '';
+  if (snap.state === 'placing') {
+    if (!snap.you.placementLocked) {
+      const shuffle = document.createElement('button');
+      shuffle.className = 'btn btn-ghost';
+      shuffle.id = 'btnBsShuffle';
+      shuffle.textContent = 'SHUFFLE FLEET';
+      shuffle.addEventListener('click', () => send('battleship.shuffle'));
+      ctrl.appendChild(shuffle);
+      const lock = document.createElement('button');
+      lock.className = 'btn btn-primary';
+      lock.id = 'btnBsLockPlacement';
+      lock.textContent = 'LOCK PLACEMENT';
+      lock.addEventListener('click', () => send('battleship.lock_placement'));
+      ctrl.appendChild(lock);
+    } else {
+      const w = document.createElement('div');
+      w.style.cssText = 'font-size:13px; color: rgba(0,0,0,0.6); letter-spacing: 0.18em; font-weight: 700;';
+      w.textContent = 'WAITING FOR OPPONENT TO LOCK PLACEMENT…';
+      ctrl.appendChild(w);
+    }
+  } else if (snap.state === 'playing') {
+    if (!snap.pending.youLockedIn) {
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'font-size:13px; color: rgba(0,0,0,0.7); letter-spacing: 0.16em; font-weight: 700;';
+      lbl.textContent = state.bs.pendingTarget
+        ? `TARGET ${cellToCoord(state.bs.pendingTarget)}`
+        : 'PICK A TARGET ON THE OPPONENT GRID';
+      ctrl.appendChild(lbl);
+      const lock = document.createElement('button');
+      lock.className = 'btn btn-primary';
+      lock.id = 'btnBsLockShot';
+      lock.textContent = 'LOCK IN SHOT';
+      lock.disabled = !state.bs.pendingTarget;
+      lock.addEventListener('click', bsLockShot);
+      ctrl.appendChild(lock);
+    } else if (!snap.pending.opponentLockedIn) {
+      const w = document.createElement('div');
+      w.style.cssText = 'font-size:13px; color: rgba(0,0,0,0.6); letter-spacing: 0.18em; font-weight: 700;';
+      w.textContent = 'WAITING FOR OPPONENT TO LOCK SHOT…';
+      ctrl.appendChild(w);
+    } else {
+      const w = document.createElement('div');
+      w.style.cssText = 'font-size:13px; color: rgba(0,0,0,0.6); letter-spacing: 0.18em; font-weight: 700;';
+      w.textContent = 'RESOLVING…';
+      ctrl.appendChild(w);
+    }
+  }
+}
+
+function paintBsMidStatus(snap) {
+  const status = $('#bsMidStatus');
+  status.classList.remove('is-armed', 'is-resolving');
+  if (snap.state === 'placing') {
+    status.textContent = 'PLACE YOUR FLEET';
+  } else if (snap.state === 'playing') {
+    if (snap.pending.youLockedIn && snap.pending.opponentLockedIn) {
+      status.textContent = 'BOTH PLAYERS LOCKED IN';
+      status.classList.add('is-resolving');
+    } else if (snap.pending.youLockedIn) {
+      status.textContent = 'AWAITING OPPONENT';
+      status.classList.add('is-armed');
+    } else if (snap.pending.opponentLockedIn) {
+      status.textContent = 'OPPONENT READY · LOCK IN';
+      status.classList.add('is-armed');
+    } else {
+      status.textContent = 'PICK YOUR TARGET';
+      status.classList.add('is-armed');
+    }
+  } else {
+    status.textContent = '—';
+  }
+}
+
+function paintBsShots(yourCoord, oppCoord, yourStatus, oppStatus) {
+  $('#bsYouShotCoord').textContent = yourCoord || '—';
+  $('#bsOppShotCoord').textContent = oppCoord || '—';
+  const yEl = $('#bsYouShotStatus'); const oEl = $('#bsOppShotStatus');
+  yEl.textContent = yourStatus || '';
+  oEl.textContent = oppStatus || '';
+  yEl.className = 'bs-shot-status' + (yourStatus === 'HIT' ? ' is-hit' : (yourStatus ? ' is-locked' : ''));
+  oEl.className = 'bs-shot-status' + (oppStatus === 'HIT' ? ' is-hit' : (oppStatus ? ' is-locked' : ''));
+}
+
+function bsTargetCell(x, y) {
+  if (!state.bs.match || state.bs.match.state !== 'playing') return;
+  if (state.bs.match.pending.youLockedIn) return;
+  state.bs.pendingTarget = { x, y };
+  paintBsBoards(state.bs.match);
+  paintBsControls(state.bs.match);
+}
+
+function bsLockShot() {
+  if (!state.bs.pendingTarget) return;
+  const { x, y } = state.bs.pendingTarget;
+  send('battleship.lock_shot', { x, y });
+  // Show provisional locked-in state (server snapshot will follow)
+  paintBsShots(cellToCoord({ x, y }), '—', 'LOCKED IN', '');
+  state.bs.pendingTarget = null;
+}
+
+function cellToCoord(c) {
+  if (!c || c.x == null) return '—';
+  const letter = String.fromCharCode(65 + c.x);
+  return `${letter}${c.y + 1}`;
+}
+
+function bsShowMatchResult(msg) {
+  const card = $('#bsResultCard');
+  card.classList.remove('win', 'lose', 'void');
+  const banner = $('#bsResultBanner');
+  if (msg.isVoid) {
+    card.classList.add('void');
+    banner.textContent = 'VOID — REFUNDED';
+  } else if (msg.youWon) {
+    card.classList.add('win');
+    banner.textContent = 'VICTORY';
+  } else {
+    card.classList.add('lose');
+    banner.textContent = 'DEFEAT';
+  }
+  $('#bsResultRounds').textContent = msg.rounds || '—';
+  // hits: count from each board (the boards show full reveal)
+  const me = state.playerId;
+  const oppId = Object.keys(msg.boards || {}).find(id => id !== me);
+  const myShipsHit = (msg.boards && msg.boards[me] || []).reduce((sum, s) => sum + s.cells.filter(c => c.hit).length, 0);
+  const oppShipsHit = oppId ? (msg.boards[oppId] || []).reduce((sum, s) => sum + s.cells.filter(c => c.hit).length, 0) : 0;
+  $('#bsResultYouHits').textContent = oppShipsHit; // I dealt this many hits to the opponent
+  $('#bsResultOppHits').textContent = myShipsHit;  // opponent dealt this many to me
+  $('#bsRPot').textContent = '$' + (msg.pot != null ? msg.pot.toFixed(2) : '—');
+  $('#bsRFee').textContent = '$' + (msg.feeAmount != null ? msg.feeAmount.toFixed(2) : '—');
+  $('#bsRPayout').textContent = '$' + (msg.payout != null ? msg.payout.toFixed(2) : '0.00');
+  $('#bsRSeed').textContent = msg.seed || '—';
+  if (msg.balance != null) { state.balance = msg.balance; updateTopStrip(); }
+  if (msg.stats) state.stats = msg.stats;
+  $('#bsResultModal').classList.remove('hidden');
 }

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
+const battleship = require('./battleship');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -113,13 +114,14 @@ function broadcastMatch(match, type, data = {}) {
   }
 }
 
-function getQueue(stake) {
-  return getQueueByKey(queueKey(stake));
+function getQueue(stake, game = 'reaction') {
+  return getQueueByKey(queueKey(stake, '', game));
 }
 
-function queueKey(stake, room = '') {
+function queueKey(stake, room = '', game = 'reaction') {
   const normalizedRoom = normalizeRoom(room);
-  return normalizedRoom ? `${stake}:room:${normalizedRoom}` : `${stake}:public`;
+  const base = `${game}:${stake}`;
+  return normalizedRoom ? `${base}:room:${normalizedRoom}` : `${base}:public`;
 }
 
 function normalizeRoom(room) {
@@ -138,8 +140,8 @@ function removeFromAllQueues(playerId) {
   }
 }
 
-function tryMatchmake(stake, room = '') {
-  const q = getQueueByKey(queueKey(stake, room));
+function tryMatchmake(stake, room = '', game = 'reaction', extra = {}) {
+  const q = getQueueByKey(queueKey(stake, room, game));
   while (q.length >= 2) {
     const a = q.shift();
     const b = q.shift();
@@ -152,7 +154,11 @@ function tryMatchmake(stake, room = '') {
       else q.unshift(b);
       continue;
     }
-    createMatch(a, b, stake, 'pvp');
+    if (game === 'battleship') {
+      createBattleshipMatch(a, b, stake, extra.arenaId);
+    } else {
+      createMatch(a, b, stake, 'pvp');
+    }
   }
 }
 
@@ -237,6 +243,173 @@ function startSoloMatch(player) {
 function startBotMatch(player, stake) {
   const bot = makeBotPlayer(player.name);
   createMatch(player, bot, stake, 'bot');
+}
+
+// =====================================================================
+// BATTLESHIP — separate match type living in `matches` map alongside
+// reaction matches. Type-discriminated by match.type === 'battleship'.
+// =====================================================================
+
+function createBattleshipMatch(a, b, stake, arenaId) {
+  if (a && !a.isBot && stake > 0) a.balance -= stake;
+  if (b && !b.isBot && stake > 0) b.balance -= stake;
+
+  const match = battleship.createMatch({
+    a, b, stake, feePercent: CONFIG.feePercent, arenaId,
+  });
+  matches.set(match.id, match);
+  for (const p of match.players) p.matchId = match.id;
+  for (const p of match.players) {
+    if (p.isBot) continue;
+    sendBattleshipState(match, p);
+  }
+  scheduleBattleshipPlacementTimeout(match);
+}
+
+function sendBattleshipState(match, player, eventType = 'battleship.state') {
+  if (!player.ws || player.ws.readyState !== player.ws.OPEN) return;
+  const snap = battleship.snapshotForPlayer(match, player.id);
+  // Identify the player on the receiving end
+  snap.you.name = player.name;
+  send_ws(player.ws, eventType, snap);
+}
+
+function broadcastBattleshipState(match, eventType = 'battleship.state') {
+  for (const p of match.players) {
+    if (p.isBot) continue;
+    sendBattleshipState(match, p, eventType);
+  }
+}
+
+function scheduleBattleshipPlacementTimeout(match) {
+  // Auto-lock placement after 60s if a player drags their feet.
+  if (match.placementTimer) clearTimeout(match.placementTimer);
+  match.placementTimer = setTimeout(() => {
+    if (match.state !== 'placing') return;
+    for (const p of match.players) {
+      if (!match.placementsLocked[p.id]) battleship.lockPlacement(match, p);
+    }
+    if (match.state === 'playing') {
+      broadcastBattleshipState(match, 'battleship.combat_begin');
+      scheduleBattleshipRoundTimeout(match);
+    }
+  }, 60_000);
+}
+
+function scheduleBattleshipRoundTimeout(match) {
+  if (match.roundTimer) clearTimeout(match.roundTimer);
+  match.roundTimer = setTimeout(() => {
+    if (match.state !== 'playing') return;
+    // Time's up: any unlocked players forfeit this round (skipped shot).
+    resolveBattleshipRound(match, { reason: 'timeout' });
+  }, battleship.ROUND_TIMEOUT_MS);
+}
+
+function resolveBattleshipRound(match, opts = {}) {
+  if (match.state !== 'playing') return;
+  if (match.roundTimer) clearTimeout(match.roundTimer);
+  const { reveals, winnerId, isVoid } = battleship.resolveRound(match);
+
+  // Send reveal to each player
+  for (const p of match.players) {
+    if (p.isBot) continue;
+    const r = reveals[p.id];
+    const snap = battleship.snapshotForPlayer(match, p.id);
+    snap.you.name = p.name;
+    send_ws(p.ws, 'battleship.round_result', {
+      ...snap,
+      reveal: r,
+      winnerId: winnerId || null,
+      isVoid,
+    });
+  }
+
+  if (match.state === 'resolved' || match.state === 'voided') {
+    finalizeBattleshipMatch(match, winnerId, isVoid);
+  } else {
+    scheduleBattleshipRoundTimeout(match);
+  }
+}
+
+function finalizeBattleshipMatch(match, winnerId, isVoid) {
+  if (match.roundTimer) clearTimeout(match.roundTimer);
+  if (match.placementTimer) clearTimeout(match.placementTimer);
+
+  if (isVoid) {
+    // Refund both players
+    for (const p of match.players) {
+      if (p.isBot) continue;
+      p.balance += match.stake;
+      send_ws(p.ws, 'battleship.match_result', {
+        matchId: match.id,
+        gameType: 'battleship',
+        isVoid: true,
+        balance: p.balance,
+        seed: match.seed,
+        boards: {
+          [match.players[0].id]: battleship.publicBoardReveal(match.boards[match.players[0].id]),
+          [match.players[1].id]: battleship.publicBoardReveal(match.boards[match.players[1].id]),
+        },
+      });
+    }
+  } else {
+    const winner = match.players.find(p => p.id === winnerId);
+    if (!winner.isBot) winner.balance += match.payout;
+
+    for (const p of match.players) {
+      if (p.isBot) continue;
+      const isWinner = p.id === winnerId;
+      const stats = getStats(p);
+      stats.pvp.played += 1;
+      if (isWinner) { stats.pvp.wins += 1; stats.pvp.netProfit += match.payout - match.stake; }
+      else { stats.pvp.losses += 1; stats.pvp.netProfit -= match.stake; }
+      stats.matchHistory.unshift({
+        mode: 'battleship',
+        stake: match.stake,
+        youWon: isWinner,
+        yourTime: null,
+        yourFalse: false,
+        payout: isWinner ? match.payout : 0,
+        net: isWinner ? (match.payout - match.stake) : -match.stake,
+        opponentName: match.players.find(x => x.id !== p.id).name,
+        at: Date.now(),
+        arena: match.arenaName,
+        rounds: match.round,
+      });
+      if (stats.matchHistory.length > 25) stats.matchHistory.length = 25;
+
+      send_ws(p.ws, 'battleship.match_result', {
+        matchId: match.id,
+        gameType: 'battleship',
+        winnerId,
+        youWon: isWinner,
+        pot: match.pot,
+        feeAmount: match.feeAmount,
+        payout: isWinner ? match.payout : 0,
+        balance: p.balance,
+        seed: match.seed,
+        rounds: match.round,
+        boards: {
+          [match.players[0].id]: battleship.publicBoardReveal(match.boards[match.players[0].id]),
+          [match.players[1].id]: battleship.publicBoardReveal(match.boards[match.players[1].id]),
+        },
+        players: {
+          [match.players[0].id]: { name: match.players[0].name },
+          [match.players[1].id]: { name: match.players[1].name },
+        },
+        stats: snapshotStats(p),
+      });
+    }
+  }
+
+  // Free players for new matches; keep match around for rematch.request
+  for (const p of match.players) {
+    if (p.matchId === match.id) {
+      p.lastMatchId = match.id;
+      p.matchId = null;
+    }
+  }
+  setTimeout(() => matches.delete(match.id), 30_000);
 }
 
 function scheduleBotInput(match, bot) {
@@ -628,6 +801,27 @@ function handleDisconnect(player) {
   if (match.state === 'resolved' || match.state === 'voided') return;
   const opponent = match.players.find(p => p.id !== player.id);
   if (!opponent || opponent.isBot) { cleanupMatch(match); return; }
+
+  if (match.type === 'battleship') {
+    // Pre-combat (placing): refund both. In combat: opponent wins by walkover.
+    if (match.state === 'placing') {
+      opponent.balance += match.stake;
+      send_ws(opponent.ws, 'battleship.match_result', {
+        matchId: match.id,
+        gameType: 'battleship',
+        isVoid: true,
+        reason: 'opponent_disconnected',
+        balance: opponent.balance,
+        seed: match.seed,
+      });
+      match.state = 'voided';
+    } else {
+      // Treat opponent as winner, finalize using normal payout path
+      finalizeBattleshipMatch(match, opponent.id, false);
+    }
+    return;
+  }
+
   if (match.state === 'awaiting_ready' || match.state === 'ready' || match.state === 'countdown') {
     opponent.balance += match.stake;
     send_ws(opponent.ws, 'match.refund', {
@@ -690,6 +884,12 @@ wss.on('connection', (ws) => {
       stakeTiers: CONFIG.stakeTiers,
       depositPresets: CONFIG.depositPresets,
       reactionTimeoutMs: CONFIG.reactionTimeoutMs,
+      battleship: {
+        arenas: battleship.ARENAS,
+        boardSize: battleship.BOARD_SIZE,
+        fleet: battleship.FLEET,
+        roundTimeoutMs: battleship.ROUND_TIMEOUT_MS,
+      },
     },
     stats: snapshotStats(player),
     leaderboard: leaderboard.slice(0, 10),
@@ -743,11 +943,20 @@ wss.on('connection', (ws) => {
       case 'matchmaking.join': {
         const stake = Number(msg.stake);
         const room = normalizeRoom(msg.room);
-        if (!CONFIG.stakeTiers.includes(stake)) {
+        const game = (msg.game === 'battleship') ? 'battleship' : 'reaction';
+        const arenaId = String(msg.arenaId || '');
+        // For battleship, validate arenaId and use its stake; for reaction,
+        // the stake comes from CONFIG.stakeTiers.
+        let effectiveStake = stake;
+        if (game === 'battleship') {
+          const arena = battleship.ARENAS.find(a => a.id === arenaId);
+          if (!arena) { send_ws(ws, 'matchmaking.error', { reason: 'invalid_arena' }); break; }
+          effectiveStake = arena.stake;
+        } else if (!CONFIG.stakeTiers.includes(stake)) {
           send_ws(ws, 'matchmaking.error', { reason: 'invalid_stake' });
           break;
         }
-        if (player.balance < stake) {
+        if (player.balance < effectiveStake) {
           send_ws(ws, 'matchmaking.error', { reason: 'insufficient_funds' });
           break;
         }
@@ -756,9 +965,13 @@ wss.on('connection', (ws) => {
           break;
         }
         removeFromAllQueues(player.id);
-        getQueueByKey(queueKey(stake, room)).push(player);
-        send_ws(ws, 'matchmaking.queued', { stake, room });
-        tryMatchmake(stake, room);
+        // Stamp the player's queue intent so we can dispatch to the right
+        // game type when matched.
+        player.queueGame = game;
+        player.queueArenaId = arenaId;
+        getQueueByKey(queueKey(effectiveStake, room, game)).push(player);
+        send_ws(ws, 'matchmaking.queued', { stake: effectiveStake, room, game, arenaId });
+        tryMatchmake(effectiveStake, room, game, { arenaId });
         break;
       }
       case 'play.bot': {
@@ -864,6 +1077,41 @@ wss.on('connection', (ws) => {
       }
       case 'request.stats': {
         send_ws(ws, 'stats', snapshotStats(player));
+        break;
+      }
+
+      // ============= BATTLESHIP =============
+      case 'battleship.shuffle': {
+        if (!player.matchId) break;
+        const match = matches.get(player.matchId);
+        if (!match || match.type !== 'battleship') break;
+        const r = battleship.shufflePlacement(match, player);
+        if (r.ok) sendBattleshipState(match, player);
+        else send_ws(ws, 'battleship.error', { reason: r.reason });
+        break;
+      }
+      case 'battleship.lock_placement': {
+        if (!player.matchId) break;
+        const match = matches.get(player.matchId);
+        if (!match || match.type !== 'battleship') break;
+        const r = battleship.lockPlacement(match, player);
+        if (!r.ok) { send_ws(ws, 'battleship.error', { reason: r.reason }); break; }
+        broadcastBattleshipState(match);
+        if (r.started) {
+          if (match.placementTimer) { clearTimeout(match.placementTimer); match.placementTimer = null; }
+          broadcastBattleshipState(match, 'battleship.combat_begin');
+          scheduleBattleshipRoundTimeout(match);
+        }
+        break;
+      }
+      case 'battleship.lock_shot': {
+        if (!player.matchId) break;
+        const match = matches.get(player.matchId);
+        if (!match || match.type !== 'battleship') break;
+        const r = battleship.lockShot(match, player, Number(msg.x), Number(msg.y));
+        if (!r.ok) { send_ws(ws, 'battleship.error', { reason: r.reason }); break; }
+        broadcastBattleshipState(match);
+        if (r.allLocked) resolveBattleshipRound(match);
         break;
       }
     }

@@ -2,7 +2,7 @@
   "name": "xioma-f1-reaction",
   "version": "1.0.0",
   "private": true,
-  "description": "XIOMA — F1 Reaction Time Game. Server-authoritative PvP reaction duel.",
+  "description": "XIOMA — PvP gaming platform. F1 Reaction Duel + Battleship Naval Duel. Server-authoritative, 6% fee on PvP pots.",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -12,6 +12,7 @@
     "smoke:rematch-button": "node scripts/e2e-rematch.js",
     "smoke:room": "node scripts/e2e-room.js",
     "smoke:latency": "node scripts/e2e-latency.js",
+    "smoke:battleship": "node scripts/e2e-battleship.js",
     "tunnel": "npx --yes localtunnel --port ${PORT:-3000}"
   },
   "dependencies": {
