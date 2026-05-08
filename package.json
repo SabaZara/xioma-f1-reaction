@@ -13,6 +13,7 @@
     "smoke:room": "node scripts/e2e-room.js",
     "smoke:latency": "node scripts/e2e-latency.js",
     "smoke:battleship": "node scripts/e2e-battleship.js",
+    "smoke:multi": "node scripts/e2e-multi.js",
     "tunnel": "npx --yes localtunnel --port ${PORT:-3000}"
   },
   "dependencies": {

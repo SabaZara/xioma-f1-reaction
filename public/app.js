@@ -10,7 +10,7 @@ const state = {
   name: null,
   livery: 'red',
   balance: 0,
-  config: { feePercent: 0.06, stakeTiers: [1,5,10,25,50,100], depositPresets: [50,100,250,500,1000], reactionTimeoutMs: 4000 },
+  config: { feePercent: 0.06, stakeTiers: [1,5,10,25,50,100], depositPresets: [50,100,250,500,1000], reactionTimeoutMs: 4000, partySizes: [3,4,5,6,8] },
   ping: null,
   serverOffsetMs: 0,
   match: null,
@@ -20,6 +20,8 @@ const state = {
   lightsTimers: [],
   pvpStake: null,
   botStake: null,
+  multiStake: null,
+  multiPartySize: 3,
   roomCode: '',
   audioOn: true,
   stats: null,
@@ -150,6 +152,15 @@ function initPlay() {
   $('#btnPlaySolo').addEventListener('click', () => {
     send('play.solo');
   });
+  $('#btnFindMulti').addEventListener('click', () => {
+    if (state.multiStake == null) return;
+    if (state.balance < state.multiStake) return toast('Insufficient balance — top up in Wallet.');
+    send('matchmaking.join', {
+      stake: state.multiStake,
+      partySize: state.multiPartySize,
+      game: 'reaction',
+    });
+  });
   $('#btnCancelMM').addEventListener('click', () => send('matchmaking.cancel'));
   $('#btnQuit').addEventListener('click', () => {
     send('leave_match');
@@ -159,8 +170,9 @@ function initPlay() {
 }
 function activateModeTab(name) {
   $$('.modes-tab').forEach(t => t.classList.toggle('active', t.dataset.modetab === name));
-  ['pvp','bot','solo'].forEach(m => {
-    $('#modePanel-' + m).classList.toggle('hidden', m !== name);
+  ['pvp','multi','bot','solo'].forEach(m => {
+    const panel = $('#modePanel-' + m);
+    if (panel) panel.classList.toggle('hidden', m !== name);
   });
 }
 
@@ -187,6 +199,47 @@ function updateStakeSummary(stake, prefix) {
   $('#' + prefix + 'Pot').textContent = fmtMoney(pot);
   $('#' + prefix + 'Fee').textContent = fmtMoney(fee);
   $('#' + prefix + 'Prize').textContent = fmtMoney(prize);
+}
+
+function buildPartyTiers(containerId, sizes, onSelect) {
+  const wrap = $(containerId);
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  for (const n of sizes) {
+    const el = document.createElement('button');
+    el.className = 'party-tier'; el.type = 'button';
+    el.dataset.party = String(n);
+    el.innerHTML = `${n}<div class="lbl">PLAYERS</div>`;
+    el.addEventListener('click', () => {
+      $$('.party-tier', wrap).forEach(t => t.classList.remove('selected'));
+      el.classList.add('selected');
+      onSelect(n);
+    });
+    wrap.appendChild(el);
+  }
+}
+
+function updateMultiSummary() {
+  const stake = state.multiStake;
+  const ps = state.multiPartySize;
+  if (!stake || !ps) {
+    $('#multiStake').textContent = '—';
+    $('#multiPartyVal').textContent = ps ? `${ps}` : '—';
+    $('#multiPot').textContent = '—';
+    $('#multiFee').textContent = '—';
+    $('#multiPrize').textContent = '—';
+    $('#btnFindMulti').disabled = true;
+    return;
+  }
+  const pot = stake * ps;
+  const fee = +(pot * state.config.feePercent).toFixed(2);
+  const prize = +(pot - fee).toFixed(2);
+  $('#multiStake').textContent = fmtMoney(stake);
+  $('#multiPartyVal').textContent = `${ps}`;
+  $('#multiPot').textContent = fmtMoney(pot);
+  $('#multiFee').textContent = fmtMoney(fee);
+  $('#multiPrize').textContent = fmtMoney(prize);
+  $('#btnFindMulti').disabled = false;
 }
 
 function initRoomInvite() {
@@ -428,8 +481,17 @@ function handleServer(msg) {
       $('#hsFee').textContent = Math.round(state.config.feePercent * 100) + '%';
       $('#pvpFeePct').textContent = Math.round(state.config.feePercent * 100) + '%';
       $('#bsFeePct').textContent = Math.round(state.config.feePercent * 100) + '%';
+      const multiFeeEl = $('#multiFeePct'); if (multiFeeEl) multiFeeEl.textContent = Math.round(state.config.feePercent * 100) + '%';
       buildStakeTiers('#pvpTiers', (a) => { state.pvpStake = a; updateStakeSummary(a, 'pvp'); $('#btnFindPvP').disabled = false; });
       buildStakeTiers('#botTiers', (a) => { state.botStake = a; updateStakeSummary(a, 'bot'); $('#btnPlayBot').disabled = false; });
+      buildStakeTiers('#multiTiers', (a) => { state.multiStake = a; updateMultiSummary(); });
+      const partySizes = (state.config && state.config.partySizes) || [3, 4, 5, 6, 8];
+      buildPartyTiers('#multiPartyTiers', partySizes, (n) => { state.multiPartySize = n; updateMultiSummary(); });
+      // Pre-select the smallest party size so the player only needs to click stake
+      state.multiPartySize = partySizes[0] || 3;
+      const firstParty = $('#multiPartyTiers .party-tier');
+      if (firstParty) firstParty.classList.add('selected');
+      updateMultiSummary();
       paintLiverySelection(state.livery);
       paintAvatar();
       paintHomeScene();
@@ -509,14 +571,55 @@ function handleServer(msg) {
       $('#mmRoom').classList.toggle('hidden', !msg.room);
       $('#mmRoomCode').textContent = msg.room || '—';
       $('#overlay-mm').classList.remove('hidden');
+      // Update the in-page multiplayer status banner if applicable
+      const isMulti = msg.partySize && msg.partySize > 2;
+      const statusEl = $('#multiQueueStatus');
+      if (statusEl) {
+        statusEl.classList.toggle('hidden', !isMulti);
+        if (isMulti) {
+          $('#multiWaiting').textContent = msg.waiting != null ? msg.waiting : 1;
+          $('#multiNeeded').textContent = msg.needed != null ? msg.needed : msg.partySize;
+        }
+      }
+      // Show count in the matchmaking overlay
+      const mmHint = $('#mmHint');
+      if (mmHint) {
+        if (isMulti && msg.waiting != null && msg.needed != null) {
+          mmHint.textContent = `Multiplayer · ${msg.waiting} / ${msg.needed} drivers in queue`;
+        } else {
+          mmHint.textContent = '';
+        }
+      }
+      break;
+    }
+    case 'matchmaking.queue_update': {
+      const statusEl = $('#multiQueueStatus');
+      const needed = msg.needed || 0;
+      if (statusEl && needed > 2) {
+        $('#multiWaiting').textContent = msg.waiting != null ? msg.waiting : 0;
+        $('#multiNeeded').textContent = needed;
+      }
+      const mmHint = $('#mmHint');
+      if (mmHint && needed > 2) {
+        mmHint.textContent = `Multiplayer · ${msg.waiting} / ${needed} drivers in queue`;
+      }
       break;
     }
     case 'matchmaking.cancelled': {
-      $('#overlay-mm').classList.add('hidden'); break;
+      $('#overlay-mm').classList.add('hidden');
+      const statusEl = $('#multiQueueStatus');
+      if (statusEl) statusEl.classList.add('hidden');
+      break;
     }
     case 'matchmaking.error': {
       $('#overlay-mm').classList.add('hidden');
+      const statusEl = $('#multiQueueStatus');
+      if (statusEl) statusEl.classList.add('hidden');
       toast(prettyReason(msg.reason));
+      break;
+    }
+    case 'player.disconnect': {
+      toast('A driver disconnected from the match.');
       break;
     }
     case 'match.start': {
@@ -706,16 +809,24 @@ function enterMatch(msg) {
   updateTopStrip();
   $('#overlay-mm').classList.add('hidden');
   $('#resultModal').classList.add('hidden');
+  const multiStatus = $('#multiQueueStatus');
+  if (multiStatus) multiStatus.classList.add('hidden');
 
   $('#youName').textContent = (msg.you.name || 'YOU') + ' · YOU';
-  $('#oppName').textContent = msg.opponent.name;
+  // For multi-player matches, the opponent lane shows "N drivers" instead of one name.
+  const isMulti = msg.mode === 'multi' || (msg.partySize && msg.partySize > 2);
+  if (isMulti && Array.isArray(msg.opponents)) {
+    $('#oppName').textContent = `${msg.opponents.length} OPPONENTS`;
+  } else {
+    $('#oppName').textContent = msg.opponent.name;
+  }
   $('#youStake').textContent = msg.mode === 'solo' ? 'TIME-ATTACK' : fmtMoney(msg.stake);
   $('#oppStake').textContent = msg.mode === 'solo' ? '—' : fmtMoney(msg.stake);
   $('#youRt').textContent = '—';
   $('#oppRt').textContent = '—';
   $('#hudPot').textContent = msg.mode === 'solo' ? '—' : fmtMoney(msg.pot);
   $('#hudFee').textContent = msg.mode === 'solo' ? '—' : fmtMoney(msg.feeAmount);
-  $('#hudMode').textContent = msg.mode.toUpperCase();
+  $('#hudMode').textContent = isMulti ? `MULTI · ${msg.partySize}P` : msg.mode.toUpperCase();
   $('#hudStatus').textContent = msg.isRematch ? 'REMATCH · READY UP' : 'READY UP';
   $('#hudStatus').className = 'hud-status';
 
@@ -799,6 +910,7 @@ function sendInput() {
 function showResult(msg) {
   const card = $('#resultCard');
   const me = state.playerId;
+  const isMulti = msg.mode === 'multi' || (msg.partySize && msg.partySize > 2);
   const oppId = Object.keys(msg.times || {}).find(id => id !== me);
   const youLane = $('.lane-you'); const oppLane = $('.lane-opp');
   if (msg.mode === 'solo') {
@@ -833,6 +945,46 @@ function showResult(msg) {
     youBlock.classList.remove('win','lose','bust'); oppBlock.classList.remove('win','lose','bust');
     const extra = $('#resultExtra'); extra.classList.remove('show'); extra.innerHTML = '';
 
+    // Multi-player: hide the head-to-head times block and show a leaderboard
+    // with every player ranked by reaction time.
+    const headToHead = $('#resultTimes');
+    const multiList = $('#multiResults');
+    if (isMulti && multiList && msg.times && msg.players) {
+      headToHead.classList.add('hidden');
+      multiList.classList.remove('hidden');
+      const listEl = $('#multiResultsList');
+      listEl.innerHTML = '';
+      const rows = Object.keys(msg.times).map(id => ({
+        id,
+        name: (msg.players[id] && msg.players[id].name) || 'Driver',
+        t: msg.times[id] || {},
+      }));
+      // Sort: valid reactions first by time ascending, then false-starts/timeouts last
+      rows.sort((a, b) => {
+        const aFault = a.t.falseStart || (a.t.timedOut && !a.t.walkover) || a.t.reactionTime == null;
+        const bFault = b.t.falseStart || (b.t.timedOut && !b.t.walkover) || b.t.reactionTime == null;
+        if (aFault !== bFault) return aFault ? 1 : -1;
+        if (aFault) return 0;
+        return (a.t.reactionTime || 0) - (b.t.reactionTime || 0);
+      });
+      rows.forEach((row, idx) => {
+        const div = document.createElement('div');
+        div.className = 'multi-result-row';
+        if (row.id === me) div.classList.add('is-you');
+        if (row.id === msg.winnerId) div.classList.add('is-winner');
+        const isFault = row.t.falseStart || (row.t.timedOut && !row.t.walkover) || row.t.reactionTime == null;
+        if (isFault) div.classList.add('is-fault');
+        const rankLabel = row.id === msg.winnerId ? 'WIN' : (idx + 1) + '.';
+        div.innerHTML = `<div class="mr-rank">${rankLabel}</div>` +
+                        `<div class="mr-name">${row.name}${row.id === me ? ' (you)' : ''}</div>` +
+                        `<div class="mr-time">${formatReaction(row.t)}</div>`;
+        listEl.appendChild(div);
+      });
+    } else {
+      headToHead.classList.remove('hidden');
+      if (multiList) multiList.classList.add('hidden');
+    }
+
     if (msg.mode === 'solo') {
       if (myT.falseStart) {
         card.classList.add('lose'); $('#resultBanner').textContent = 'FALSE START';
@@ -847,9 +999,11 @@ function showResult(msg) {
         card.classList.add('void'); $('#resultBanner').textContent = 'NO INPUT';
       }
     } else if (msg.winnerId === me) {
-      card.classList.add('win'); $('#resultBanner').textContent = 'YOU WIN';
+      card.classList.add('win');
+      $('#resultBanner').textContent = isMulti ? `1ST OF ${msg.partySize || Object.keys(msg.times || {}).length} · YOU WIN` : 'YOU WIN';
       youBlock.classList.add('win'); oppBlock.classList.add(oppT.falseStart ? 'bust' : 'lose');
       playBeep('win');
+      if (isMulti && msg.payout) toast(`Victory! +${fmtMoney(msg.payout)} added to your balance.`);
     } else if (msg.winnerId) {
       card.classList.add('lose'); $('#resultBanner').textContent = 'YOU LOSE';
       oppBlock.classList.add('win'); youBlock.classList.add(myT.falseStart ? 'bust' : 'lose');
@@ -860,6 +1014,7 @@ function showResult(msg) {
 
     // Set the action button label based on mode for clarity.
     // Solo/Bot: instant "Play Again". PvP: "Rematch" (needs opponent vote).
+    // Multi: "Find Match" — re-queue at same stake/party size.
     const btn = $('#btnRematch');
     if (msg.mode === 'pvp') {
       btn.textContent = 'REMATCH';
@@ -867,6 +1022,9 @@ function showResult(msg) {
     } else if (msg.mode === 'bot') {
       btn.textContent = 'PLAY AGAIN';
       btn.title = 'Race the bot again at the same stake.';
+    } else if (msg.mode === 'multi') {
+      btn.textContent = 'PLAY AGAIN';
+      btn.title = 'Re-queue for another multiplayer match at the same stake & party size.';
     } else {
       btn.textContent = 'RUN AGAIN';
       btn.title = 'Start another time-attack run.';
@@ -1272,7 +1430,21 @@ function bsShowMatchResult(msg) {
   $('#bsRFee').textContent = '$' + (msg.feeAmount != null ? msg.feeAmount.toFixed(2) : '—');
   $('#bsRPayout').textContent = '$' + (msg.payout != null ? msg.payout.toFixed(2) : '0.00');
   $('#bsRSeed').textContent = msg.seed || '—';
-  if (msg.balance != null) { state.balance = msg.balance; updateTopStrip(); }
+  if (msg.balance != null) {
+    state.balance = msg.balance;
+    updateTopStrip();
+    $('#bsYouBalance').textContent = '$' + state.balance.toFixed(2);
+  }
   if (msg.stats) state.stats = msg.stats;
+  // Refresh other UI surfaces so wallet, history, and stats reflect the win
+  paintHomeStats(); paintHomeHistory(); paintProfilePage(); paintWallet();
+  if (msg.youWon && msg.payout) {
+    toast(`Victory! +${fmtMoney(msg.payout)} added to your balance.`);
+    playBeep('win');
+  } else if (msg.isVoid && msg.balance != null) {
+    toast('Match void — stake refunded.');
+  } else if (!msg.youWon && !msg.isVoid) {
+    playBeep('bust');
+  }
   $('#bsResultModal').classList.remove('hidden');
 }
