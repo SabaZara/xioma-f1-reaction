@@ -663,6 +663,10 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
 .light.go { background: radial-gradient(circle at 50% 50%, #0a0b0f 0%, #07080b 70%); box-shadow: inset 0 0 16px rgba(0,0,0,0.9); }
 
 .cars-arena { position: absolute; left: 0; right: 0; bottom: 4%; display: flex; justify-content: center; gap: 12%; z-index: 3; pointer-events: none; }
+/* Multi-player matches pack 4+ cars into the same arena width — tighten the
+   gap and shrink each lane so the grid still fits on a 1080p screen. */
+.cars-arena.many-cars { gap: 4%; }
+.cars-arena.many-cars .lane { width: 9%; max-width: 92px; }
 .lane { position: relative; width: 13%; max-width: 130px; }
 .lane .f1-car { width: 100%; height: auto; transition: transform 1.4s cubic-bezier(.2,.65,.2,1), filter 1.4s ease; }
 .lane.is-launching .f1-car { transform: translateY(-160%) scale(0.78); }

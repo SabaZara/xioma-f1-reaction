@@ -89,10 +89,49 @@ function makeCarEl(livery) {
   return wrapper;
 }
 function setLanesCars(youLivery, oppLivery) {
-  const youLane = $('#laneYou');
-  const oppLane = $('#laneOpp');
-  youLane.innerHTML = ''; youLane.appendChild(makeCarEl(youLivery));
-  oppLane.innerHTML = ''; oppLane.appendChild(makeCarEl(oppLivery));
+  // Rebuild #carsArena from scratch — guarantees no stale extra lanes left
+  // over from a previous multi match.
+  const arena = $('#carsArena');
+  arena.classList.remove('many-cars');
+  arena.style.removeProperty('--lane-count');
+  arena.innerHTML = '';
+  const youLane = document.createElement('div');
+  youLane.id = 'laneYou';
+  youLane.className = 'lane lane-you';
+  youLane.appendChild(makeCarEl(youLivery));
+  const oppLane = document.createElement('div');
+  oppLane.id = 'laneOpp';
+  oppLane.className = 'lane lane-opp';
+  oppLane.appendChild(makeCarEl(oppLivery));
+  arena.appendChild(youLane);
+  arena.appendChild(oppLane);
+}
+// Multi-player: rebuild #carsArena with one lane per player so every
+// opponent has a visible car. Each lane carries data-player-id so the
+// result handler can flag the winner / losers individually.
+function setLanesMulti(you, opponents) {
+  const arena = $('#carsArena');
+  arena.innerHTML = '';
+  const total = 1 + opponents.length;
+  arena.classList.toggle('many-cars', total > 4);
+  arena.style.setProperty('--lane-count', String(total));
+
+  const youLane = document.createElement('div');
+  youLane.id = 'laneYou';
+  youLane.className = 'lane lane-you';
+  youLane.dataset.playerId = you.id;
+  youLane.appendChild(makeCarEl(you.livery));
+  arena.appendChild(youLane);
+
+  for (let i = 0; i < opponents.length; i++) {
+    const opp = opponents[i];
+    const lane = document.createElement('div');
+    lane.id = i === 0 ? 'laneOpp' : `laneOpp${i}`;
+    lane.className = 'lane lane-opp';
+    lane.dataset.playerId = opp.id;
+    lane.appendChild(makeCarEl(opp.livery));
+    arena.appendChild(lane);
+  }
 }
 function paintHomeScene() {
   $('#sceneCarYou').innerHTML = ''; $('#sceneCarYou').appendChild(makeCarEl(state.livery));
@@ -830,7 +869,11 @@ function enterMatch(msg) {
   $('#hudStatus').textContent = msg.isRematch ? 'REMATCH · READY UP' : 'READY UP';
   $('#hudStatus').className = 'hud-status';
 
-  setLanesCars(msg.you.livery, msg.opponent.livery);
+  if (isMulti && Array.isArray(msg.opponents) && msg.opponents.length > 0) {
+    setLanesMulti({ id: msg.you.id, livery: msg.you.livery }, msg.opponents);
+  } else {
+    setLanesCars(msg.you.livery, msg.opponent.livery);
+  }
   resetArenaForNextRound();
   $('#overlay-race').classList.remove('hidden');
   if (state.requiresReady) showReadyGate(msg);
@@ -912,12 +955,25 @@ function showResult(msg) {
   const me = state.playerId;
   const isMulti = msg.mode === 'multi' || (msg.partySize && msg.partySize > 2);
   const oppId = Object.keys(msg.times || {}).find(id => id !== me);
-  const youLane = $('.lane-you'); const oppLane = $('.lane-opp');
   if (msg.mode === 'solo') {
-    youLane.classList.add('is-launching');
+    const youLane = $('.lane-you');
+    if (youLane) youLane.classList.add('is-launching');
   } else if (msg.winnerId) {
-    if (msg.youWon) { youLane.classList.add('is-launching'); oppLane.classList.add('is-loser'); }
-    else { oppLane.classList.add('is-launching'); youLane.classList.add('is-loser'); }
+    // Flag every lane individually so multi-player matches show the winner
+    // launching and every other car braking, not just the first opponent.
+    const lanes = $$('.lane');
+    const taggedLanes = lanes.filter(l => l.dataset.playerId);
+    if (taggedLanes.length > 0) {
+      for (const lane of taggedLanes) {
+        if (lane.dataset.playerId === msg.winnerId) lane.classList.add('is-launching');
+        else lane.classList.add('is-loser');
+      }
+    } else {
+      // Legacy 2-player layout (no per-lane player ids).
+      const youLane = $('.lane-you'); const oppLane = $('.lane-opp');
+      if (msg.youWon) { youLane.classList.add('is-launching'); oppLane.classList.add('is-loser'); }
+      else { oppLane.classList.add('is-launching'); youLane.classList.add('is-loser'); }
+    }
   }
   setTimeout(() => $('#arena').classList.add('is-finish'), 700);
 
