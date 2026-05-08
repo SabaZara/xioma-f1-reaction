@@ -38,6 +38,17 @@ const state = {
     match: null,        // most recent state snapshot
     pendingTarget: null, // { x, y } picked but not yet locked
   },
+  oct: {
+    attacker: null,
+    minPlayers: 3,
+    maxPlayers: 8,
+    selectedParty: 3,
+    selectedStake: null,
+    match: null,         // most recent state snapshot
+    pendingChoice: null, // octagonId picked but not yet locked
+    timerEndAt: null,
+    timerInterval: null,
+  },
 };
 
 const LIVERIES = [
@@ -67,6 +78,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initSettings();
   initRace();
   initBattleship();
+  initOctagon();
   connect();
 });
 
@@ -157,6 +169,7 @@ function showPage(name) {
     home: 'Home',
     play: 'F1 Reaction',
     battleship: 'Battleship',
+    octagon: 'Octagon',
     leaderboard: 'Leaderboard',
     profile: 'Profile',
     wallet: 'Wallet',
@@ -167,6 +180,7 @@ function showPage(name) {
   if (name === 'profile') send('request.stats');
   if (name === 'home') paintHomeScene();
   if (name === 'battleship') paintBsArenaList();
+  if (name === 'octagon') paintOctagonLobby();
 }
 
 /* ============= hero / home ============= */
@@ -544,6 +558,7 @@ function handleServer(msg) {
       paintDaily();
       updateTopStrip();
       bsHandleHello(msg);
+      octHandleHello(msg);
       break;
     }
     case 'battleship.state': {
@@ -572,6 +587,32 @@ function handleServer(msg) {
       break;
     }
     case 'battleship.error': {
+      toast(prettyReason(msg.reason));
+      break;
+    }
+    // ============= OCTAGON =============
+    case 'octagon.match_start': {
+      openOctagonMatch(msg);
+      break;
+    }
+    case 'octagon.state': {
+      refreshOctagonMatch(msg);
+      break;
+    }
+    case 'octagon.round_begin': {
+      refreshOctagonMatch(msg);
+      startOctagonRoundTimer(msg);
+      break;
+    }
+    case 'octagon.round_result': {
+      handleOctagonRoundResult(msg);
+      break;
+    }
+    case 'octagon.match_result': {
+      showOctagonResult(msg);
+      break;
+    }
+    case 'octagon.error': {
       toast(prettyReason(msg.reason));
       break;
     }
@@ -1503,4 +1544,315 @@ function bsShowMatchResult(msg) {
     playBeep('bust');
   }
   $('#bsResultModal').classList.remove('hidden');
+}
+
+/* =====================================================================
+   OCTAGON · UFC Battle Royale — client logic
+   ===================================================================== */
+
+const OCT_STAKE_TIERS = [1, 5, 10, 25, 50, 100];
+
+function octHandleHello(msg) {
+  const cfg = msg && msg.config && msg.config.octagon;
+  if (!cfg) return;
+  state.oct.attacker = cfg.attacker;
+  state.oct.minPlayers = cfg.minPlayers;
+  state.oct.maxPlayers = cfg.maxPlayers;
+  // pre-select smallest party + smallest stake so the page is usable on first
+  // visit
+  if (state.oct.selectedParty == null) state.oct.selectedParty = cfg.minPlayers;
+}
+
+function initOctagon() {
+  $('#octBackBtn').addEventListener('click', () => {
+    send('leave_match');
+    closeOctagonOverlay();
+    showPage('octagon');
+  });
+  $('#btnOctFind').addEventListener('click', () => {
+    if (!state.oct.selectedStake) return toast('Pick a stake.');
+    if (state.balance < state.oct.selectedStake) return toast('Insufficient balance — top up in Wallet.');
+    send('matchmaking.join', {
+      game: 'octagon',
+      stake: state.oct.selectedStake,
+      partySize: state.oct.selectedParty,
+    });
+  });
+  $('#btnOctLobby').addEventListener('click', () => {
+    $('#octResultModal').classList.add('hidden');
+    closeOctagonOverlay();
+    showPage('octagon');
+  });
+  $('#btnOctRematch').addEventListener('click', () => {
+    $('#octResultModal').classList.add('hidden');
+    if (state.oct.selectedStake) {
+      send('matchmaking.join', {
+        game: 'octagon',
+        stake: state.oct.selectedStake,
+        partySize: state.oct.selectedParty,
+      });
+    } else {
+      showPage('octagon');
+    }
+  });
+}
+
+function paintOctagonLobby() {
+  const partyWrap = $('#octPartyTiers');
+  const stakeWrap = $('#octStakeTiers');
+  if (!partyWrap || !stakeWrap) return;
+  partyWrap.innerHTML = '';
+  stakeWrap.innerHTML = '';
+  for (let n = state.oct.minPlayers; n <= state.oct.maxPlayers; n++) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'oct-party-card' + (n === state.oct.selectedParty ? ' selected' : '');
+    card.innerHTML = `<div class="lbl">PARTY</div><div class="val">${n}</div>`;
+    card.addEventListener('click', () => {
+      state.oct.selectedParty = n;
+      paintOctagonLobby();
+    });
+    partyWrap.appendChild(card);
+  }
+  for (const stake of OCT_STAKE_TIERS) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'oct-stake-card' + (state.oct.selectedStake === stake ? ' selected' : '');
+    card.innerHTML = `<div class="lbl">STAKE</div><div class="val">$${stake}</div>`;
+    card.addEventListener('click', () => {
+      state.oct.selectedStake = stake;
+      paintOctagonLobby();
+    });
+    stakeWrap.appendChild(card);
+  }
+  refreshOctSummary();
+  $('#octFeePct').textContent = Math.round((state.config.feePercent || 0.06) * 100) + '%';
+}
+
+function refreshOctSummary() {
+  const stake = state.oct.selectedStake;
+  const party = state.oct.selectedParty;
+  $('#btnOctFind').disabled = !(stake != null && party != null);
+  if (stake == null || party == null) {
+    $('#octStakeOut').textContent = '—';
+    $('#octPartyOut').textContent = '—';
+    $('#octPotOut').textContent = '—';
+    $('#octFeeOut').textContent = '—';
+    $('#octPrizeOut').textContent = '—';
+    return;
+  }
+  const fee = state.config.feePercent || 0.06;
+  const pot = stake * party;
+  const feeAmt = +(pot * fee).toFixed(2);
+  const prize = +(pot - feeAmt).toFixed(2);
+  $('#octStakeOut').textContent = '$' + stake.toFixed(2);
+  $('#octPartyOut').textContent = party + ' players';
+  $('#octPotOut').textContent = '$' + pot.toFixed(2);
+  $('#octFeeOut').textContent = '$' + feeAmt.toFixed(2);
+  $('#octPrizeOut').textContent = '$' + prize.toFixed(2);
+}
+
+function openOctagonMatch(snap) {
+  state.oct.match = snap;
+  state.oct.pendingChoice = null;
+  $('#overlay-octmatch').classList.remove('hidden');
+  $('#overlay-mm').classList.add('hidden');
+  $('#octResultModal').classList.add('hidden');
+  $('#octAttackerName').textContent = (snap.attacker && snap.attacker.name) || 'THE BONE CRUSHER';
+  $('#octAttackerTagline').textContent = (snap.attacker && snap.attacker.tagline) || '';
+  // Send octagon.ready so the server begins round 1 once everyone has
+  // acknowledged. Tiny delay to let UI settle.
+  setTimeout(() => send('octagon.ready'), 60);
+  refreshOctagonMatch(snap);
+}
+
+function refreshOctagonMatch(snap) {
+  state.oct.match = snap;
+  $('#octRoundNum').textContent = snap.round || 0;
+  $('#octPotLive').textContent = '$' + (snap.pot != null ? snap.pot.toFixed(2) : '—');
+  $('#octFeeLive').textContent = '$' + (snap.feeAmount != null ? snap.feeAmount.toFixed(2) : '—');
+  $('#octPayoutLive').textContent = '$' + (snap.payout != null ? snap.payout.toFixed(2) : '—');
+  paintOctRoster(snap);
+  paintOctCages(snap);
+  paintOctStatus(snap);
+}
+
+function startOctagonRoundTimer(snap) {
+  state.oct.timerEndAt = Date.now() + 18000; // mirrors server ROUND_TIMEOUT_MS
+  if (state.oct.timerInterval) clearInterval(state.oct.timerInterval);
+  state.oct.timerInterval = setInterval(() => {
+    const remaining = Math.max(0, Math.round((state.oct.timerEndAt - Date.now()) / 1000));
+    $('#octRoundTimer').textContent = `${String(remaining).padStart(2, '0')}s`;
+    if (remaining <= 0) {
+      clearInterval(state.oct.timerInterval);
+      state.oct.timerInterval = null;
+    }
+  }, 250);
+}
+
+function paintOctCages(snap) {
+  const wrap = $('#octCages');
+  wrap.innerHTML = '';
+  const n = (snap.octagons || []).length;
+  wrap.className = 'oct-cages cages-' + n;
+  if (snap.state !== 'choosing' || !snap.youAlive) {
+    // Show placeholder cages with the same shape but disabled
+    for (const oct of (snap.octagons || [])) {
+      wrap.appendChild(buildOctCage(oct, snap, true));
+    }
+    return;
+  }
+  for (const oct of snap.octagons) {
+    wrap.appendChild(buildOctCage(oct, snap, false));
+  }
+}
+
+function buildOctCage(oct, snap, disabled) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'oct-cage';
+  if (disabled) card.classList.add('is-eliminated');
+  if (state.oct.pendingChoice === oct.id) card.classList.add('selected');
+  if (snap.yourChoice === oct.id) card.classList.add('selected');
+  card.innerHTML = `
+    <div class="oct-cage-shape">
+      <svg viewBox="0 0 100 100">
+        <polygon points="50,8 78,22 90,52 78,82 22,82 10,52 22,22"
+                 fill="rgba(255,44,58,0.06)" stroke="rgba(255,44,58,0.6)" stroke-width="1.6"/>
+        <g stroke="rgba(255,44,58,0.18)" stroke-width="0.6">
+          <line x1="22" y1="22" x2="78" y2="82"/>
+          <line x1="78" y1="22" x2="22" y2="82"/>
+          <line x1="50" y1="8" x2="50" y2="82"/>
+          <line x1="10" y1="52" x2="90" y2="52"/>
+        </g>
+      </svg>
+      <div class="head">${oct.id.toUpperCase()}</div>
+    </div>
+    <div class="oct-cage-name">${oct.name}</div>
+    <div class="oct-cage-style">${oct.style || ''}</div>
+    <div class="oct-cage-occupants" data-oct="${oct.id}"></div>
+  `;
+  if (!disabled) {
+    card.addEventListener('click', () => octChoose(oct.id));
+  }
+  return card;
+}
+
+function octChoose(octagonId) {
+  if (!state.oct.match || state.oct.match.state !== 'choosing') return;
+  if (!state.oct.match.youAlive) return;
+  if (state.oct.match.pending && state.oct.match.pending.youLockedIn) return;
+  state.oct.pendingChoice = octagonId;
+  // Optimistically lock; server will reject if invalid
+  send('octagon.lock_choice', { octagonId });
+  // Repaint to show selected state
+  refreshOctagonMatch(state.oct.match);
+}
+
+function paintOctStatus(snap) {
+  const text = $('#octStatusText');
+  const meta = $('#octStatusMeta');
+  text.classList.remove('is-pick', 'is-locked', 'is-attacker', 'is-eliminated');
+  if (snap.state === 'awaiting_ready') {
+    text.textContent = 'GET READY…';
+  } else if (snap.state === 'choosing') {
+    if (!snap.youAlive) {
+      text.textContent = 'ELIMINATED — SPECTATING';
+      text.classList.add('is-eliminated');
+    } else if (snap.pending && snap.pending.youLockedIn) {
+      text.textContent = 'LOCKED IN';
+      text.classList.add('is-locked');
+    } else {
+      text.textContent = 'PICK YOUR OCTAGON';
+      text.classList.add('is-pick');
+    }
+  } else if (snap.state === 'awaiting_round') {
+    text.textContent = 'BONE CRUSHER STRIKES…';
+    text.classList.add('is-attacker');
+  } else {
+    text.textContent = '—';
+  }
+  if (snap.pending) {
+    meta.textContent = `${snap.pending.lockedCount}/${snap.pending.lockedNeeded} locked · ${snap.aliveCount}/${snap.totalPlayers} alive`;
+  } else {
+    meta.textContent = '';
+  }
+}
+
+function paintOctRoster(snap) {
+  const wrap = $('#octRoster');
+  wrap.innerHTML = '';
+  for (const p of (snap.players || [])) {
+    const el = document.createElement('div');
+    let cls = 'oct-fighter';
+    if (p.id === state.playerId) cls += ' you';
+    else if (p.alive) cls += ' alive';
+    else cls += ' eliminated';
+    el.className = cls;
+    el.innerHTML = `
+      <span class="dot"></span>
+      <span>${p.name}${p.id === state.playerId ? ' · YOU' : ''}${!p.alive && p.eliminatedRound ? ' · OUT R' + p.eliminatedRound : ''}</span>
+    `;
+    wrap.appendChild(el);
+  }
+}
+
+function handleOctagonRoundResult(msg) {
+  if (state.oct.timerInterval) { clearInterval(state.oct.timerInterval); state.oct.timerInterval = null; }
+  state.oct.match = msg;
+  state.oct.pendingChoice = null;
+  // Show the reveal: highlight target cage red, others green
+  const reveal = msg.reveal;
+  if (reveal && reveal.target) {
+    const cages = $$('.oct-cage');
+    for (const cage of cages) {
+      const occ = cage.querySelector('.oct-cage-occupants');
+      const id = occ && occ.dataset.oct;
+      if (!id) continue;
+      if (id === reveal.target) cage.classList.add('is-target');
+      else cage.classList.add('is-safe');
+      // Also annotate occupants count for the round
+      const inThisCage = Object.entries(reveal.choices || {})
+        .filter(([, oct]) => oct === id);
+      if (occ) {
+        occ.innerHTML = inThisCage.length
+          ? inThisCage.map(() => '<span class="pip"></span>').join(' ') + ` <span>${inThisCage.length} fighter${inThisCage.length > 1 ? 's' : ''}</span>`
+          : '<span>empty</span>';
+      }
+    }
+  }
+  paintOctStatus(msg);
+  paintOctRoster(msg);
+  // pot/round numbers
+  $('#octRoundNum').textContent = msg.round || 0;
+}
+
+function showOctagonResult(msg) {
+  if (state.oct.timerInterval) { clearInterval(state.oct.timerInterval); state.oct.timerInterval = null; }
+  const card = $('#octResultCard');
+  const banner = $('#octResultBanner');
+  card.classList.remove('win', 'lose', 'void', 'solo-win');
+  if (msg.youWon) {
+    card.classList.add(msg.isSplit ? 'solo-win' : 'win');
+    banner.textContent = msg.isSplit ? `SPLIT · ${msg.splitCount} WAY` : 'CHAMPION';
+  } else {
+    card.classList.add('lose');
+    banner.textContent = 'ELIMINATED';
+  }
+  $('#octResultRounds').textContent = msg.rounds || 0;
+  $('#octResultFate').textContent = msg.youWon
+    ? (msg.isSplit ? `SHARED FINAL · ${msg.splitCount} ways` : 'LAST STANDING')
+    : 'KO\'D BY BONE CRUSHER';
+  $('#octRPot').textContent = '$' + (msg.pot != null ? msg.pot.toFixed(2) : '—');
+  $('#octRFee').textContent = '$' + (msg.feeAmount != null ? msg.feeAmount.toFixed(2) : '—');
+  $('#octRPayout').textContent = '$' + (msg.yourPayout != null ? msg.yourPayout.toFixed(2) : '0.00');
+  $('#octRSeed').textContent = msg.seed || '—';
+  if (msg.balance != null) { state.balance = msg.balance; updateTopStrip(); }
+  if (msg.stats) state.stats = msg.stats;
+  $('#octResultModal').classList.remove('hidden');
+}
+
+function closeOctagonOverlay() {
+  $('#overlay-octmatch').classList.add('hidden');
+  if (state.oct.timerInterval) { clearInterval(state.oct.timerInterval); state.oct.timerInterval = null; }
 }

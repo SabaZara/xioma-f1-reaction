@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const battleship = require('./battleship');
+const octagon = require('./octagon');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -194,6 +195,8 @@ function tryMatchmake(stake, room = '', game = 'reaction', extra = {}) {
 
     if (game === 'battleship') {
       createBattleshipMatch(players[0], players[1], stake, extra.arenaId);
+    } else if (game === 'octagon') {
+      createOctagonMatch(players, stake);
     } else {
       const mode = partySize === 2 ? 'pvp' : 'multi';
       createMatch(players, stake, mode);
@@ -466,6 +469,156 @@ function finalizeBattleshipMatch(match, winnerId, isVoid) {
   }
 
   // Free players for new matches; keep match around for rematch.request
+  for (const p of match.players) {
+    if (p.matchId === match.id) {
+      p.lastMatchId = match.id;
+      p.matchId = null;
+    }
+  }
+  setTimeout(() => matches.delete(match.id), 30_000);
+}
+
+// =====================================================================
+// OCTAGON — UFC-themed battle royale match type
+// =====================================================================
+
+function createOctagonMatch(playersList, stake) {
+  const players = (Array.isArray(playersList) ? playersList : [playersList]).filter(Boolean);
+  for (const p of players) {
+    if (!p.isBot && stake > 0) p.balance -= stake;
+  }
+  const match = octagon.createMatch({
+    players, stake, feePercent: CONFIG.feePercent,
+  });
+  matches.set(match.id, match);
+  for (const p of match.players) p.matchId = match.id;
+  for (const p of match.players) {
+    if (p.isBot) continue;
+    sendOctagonState(match, p, 'octagon.match_start');
+  }
+}
+
+function sendOctagonState(match, player, eventType = 'octagon.state') {
+  if (!player.ws || player.ws.readyState !== player.ws.OPEN) return;
+  send_ws(player.ws, eventType, octagon.snapshotForPlayer(match, player.id));
+}
+
+function broadcastOctagonState(match, eventType = 'octagon.state') {
+  for (const p of match.players) {
+    if (p.isBot) continue;
+    sendOctagonState(match, p, eventType);
+  }
+}
+
+function scheduleOctagonRoundTimer(match) {
+  if (match.timer) clearTimeout(match.timer);
+  match.timer = setTimeout(() => {
+    if (match.state !== 'choosing') return;
+    // Time's up — anyone who didn't lock in is eliminated by the resolver.
+    resolveOctagonRound(match);
+  }, octagon.ROUND_TIMEOUT_MS);
+}
+
+function startOctagonRound(match) {
+  octagon.beginRound(match);
+  broadcastOctagonState(match, 'octagon.round_begin');
+  scheduleOctagonRoundTimer(match);
+}
+
+function resolveOctagonRound(match) {
+  if (match.timer) { clearTimeout(match.timer); match.timer = null; }
+  const reveal = octagon.resolveRound(match);
+  if (!reveal) return;
+
+  // Send the reveal to every player (including those just eliminated, so they
+  // can see the result animation).
+  for (const p of match.players) {
+    if (p.isBot) continue;
+    if (!p.ws || p.ws.readyState !== p.ws.OPEN) continue;
+    send_ws(p.ws, 'octagon.round_result', {
+      ...octagon.snapshotForPlayer(match, p.id),
+      reveal: {
+        round: reveal.round,
+        target: reveal.target,
+        choices: reveal.choices,   // visible to everyone post-resolution
+        eliminated: reveal.eliminated,
+        survived: reveal.survived,
+      },
+      outcome: reveal.outcome,
+    });
+  }
+
+  if (reveal.outcome.kind === 'continue') {
+    // Brief pause before next round so clients can show the reveal animation.
+    setTimeout(() => {
+      if (match.state === 'awaiting_round') startOctagonRound(match);
+    }, 3000);
+  } else {
+    finalizeOctagonMatch(match, reveal.outcome);
+  }
+}
+
+function finalizeOctagonMatch(match, outcome) {
+  if (match.timer) { clearTimeout(match.timer); match.timer = null; }
+  const winners = outcome.winners || [];
+  const splitShare = winners.length
+    ? +(match.payout / winners.length).toFixed(2)
+    : 0;
+
+  for (const p of match.players) {
+    if (p.isBot) continue;
+    const isWinner = winners.includes(p.id);
+    if (isWinner) p.balance += splitShare;
+
+    const stats = getStats(p);
+    stats.pvp.played += 1;
+    if (isWinner) {
+      stats.pvp.wins += 1;
+      stats.pvp.netProfit += splitShare - match.stake;
+    } else {
+      stats.pvp.losses += 1;
+      stats.pvp.netProfit -= match.stake;
+    }
+    stats.matchHistory.unshift({
+      mode: 'octagon',
+      stake: match.stake,
+      youWon: isWinner,
+      yourTime: null,
+      yourFalse: false,
+      payout: isWinner ? splitShare : 0,
+      net: isWinner ? (splitShare - match.stake) : -match.stake,
+      opponentName: 'BONE CRUSHER',
+      at: Date.now(),
+      rounds: match.round,
+      survived: outcome.kind === 'split' ? 'split' : 'won',
+    });
+    if (stats.matchHistory.length > 25) stats.matchHistory.length = 25;
+
+    if (!p.ws || p.ws.readyState !== p.ws.OPEN) continue;
+    send_ws(p.ws, 'octagon.match_result', {
+      matchId: match.id,
+      gameType: 'octagon',
+      outcome,
+      youWon: isWinner,
+      isSplit: outcome.kind === 'split',
+      splitCount: winners.length,
+      yourPayout: isWinner ? splitShare : 0,
+      pot: match.pot,
+      feeAmount: match.feeAmount,
+      payout: match.payout,
+      seed: match.seed,
+      rounds: match.round,
+      players: Object.fromEntries(match.players.map(pl => [pl.id, {
+        name: pl.name,
+        eliminatedRound: match.eliminationRound[pl.id],
+      }])),
+      history: match.history,
+      balance: p.balance,
+      stats: snapshotStats(p),
+    });
+  }
+
+  // Free up matchId so players can queue again
   for (const p of match.players) {
     if (p.matchId === match.id) {
       p.lastMatchId = match.id;
@@ -929,6 +1082,35 @@ function handleDisconnect(player) {
     return;
   }
 
+  if (match.type === 'octagon') {
+    // The disconnecting player is eliminated immediately. They forfeit their
+    // stake; the rest of the round continues.
+    if (match.alive && match.alive.has(player.id)) {
+      match.alive.delete(player.id);
+      match.eliminationRound[player.id] = match.round;
+      // If only one player is left, we end the match in their favor.
+      if (match.alive.size === 1) {
+        finalizeOctagonMatch(match, { kind: 'winner', winners: [...match.alive] });
+        return;
+      }
+      if (match.alive.size === 0) {
+        // Everyone's gone — refund everyone (no one to win)
+        finalizeOctagonMatch(match, { kind: 'split', winners: [] });
+        return;
+      }
+      // If everyone alive has now locked in (because the leaver was the
+      // only blocker), resolve the round.
+      if (match.state === 'choosing') {
+        const allLocked = match.players.every(
+          p => !match.alive.has(p.id) || match.choices[p.id]
+        );
+        if (allLocked) resolveOctagonRound(match);
+      }
+      broadcastOctagonState(match);
+    }
+    return;
+  }
+
   // Multi-player (3+) reaction match: don't kill the whole match for one
   // disconnect. The leaver forfeits their stake; remaining racers play on.
   if (match.mode === 'multi') {
@@ -1035,6 +1217,13 @@ wss.on('connection', (ws) => {
         fleet: battleship.FLEET,
         roundTimeoutMs: battleship.ROUND_TIMEOUT_MS,
       },
+      octagon: {
+        attacker: octagon.ATTACKER,
+        octagons: octagon.OCTAGONS,
+        minPlayers: octagon.MIN_PLAYERS,
+        maxPlayers: octagon.MAX_PLAYERS,
+        roundTimeoutMs: octagon.ROUND_TIMEOUT_MS,
+      },
     },
     stats: snapshotStats(player),
     leaderboard: leaderboard.slice(0, 10),
@@ -1088,11 +1277,22 @@ wss.on('connection', (ws) => {
       case 'matchmaking.join': {
         const stake = Number(msg.stake);
         const room = normalizeRoom(msg.room);
-        const game = (msg.game === 'battleship') ? 'battleship' : 'reaction';
+        let game;
+        if (msg.game === 'battleship') game = 'battleship';
+        else if (msg.game === 'octagon') game = 'octagon';
+        else game = 'reaction';
         const arenaId = String(msg.arenaId || '');
-        const partySize = (game === 'battleship') ? 2 : clampPartySize(msg.partySize || 2);
-        // For battleship, validate arenaId and use its stake; for reaction,
-        // the stake comes from CONFIG.stakeTiers.
+        // Battleship is fixed 2 players; octagon needs 3-8; reaction is 2..8.
+        let partySize;
+        if (game === 'battleship') partySize = 2;
+        else if (game === 'octagon') {
+          const requested = parseInt(msg.partySize || octagon.MIN_PLAYERS, 10);
+          partySize = Math.max(octagon.MIN_PLAYERS, Math.min(octagon.MAX_PLAYERS, requested));
+        } else {
+          partySize = clampPartySize(msg.partySize || 2);
+        }
+        // For battleship, validate arenaId and use its stake; for reaction
+        // and octagon, the stake comes from CONFIG.stakeTiers.
         let effectiveStake = stake;
         if (game === 'battleship') {
           const arena = battleship.ARENAS.find(a => a.id === arenaId);
@@ -1297,6 +1497,33 @@ wss.on('connection', (ws) => {
         if (!r.ok) { send_ws(ws, 'battleship.error', { reason: r.reason }); break; }
         broadcastBattleshipState(match);
         if (r.allLocked) resolveBattleshipRound(match);
+        break;
+      }
+
+      // ============= OCTAGON =============
+      case 'octagon.ready': {
+        // Mark this player ready; once everyone in the match is ready,
+        // begin round 1.
+        if (!player.matchId) break;
+        const match = matches.get(player.matchId);
+        if (!match || match.type !== 'octagon') break;
+        if (match.state !== 'awaiting_ready') break;
+        match.readyVotes.add(player.id);
+        broadcastOctagonState(match);
+        const humans = match.players.filter(p => !p.isBot);
+        if (match.readyVotes.size >= humans.length) {
+          startOctagonRound(match);
+        }
+        break;
+      }
+      case 'octagon.lock_choice': {
+        if (!player.matchId) break;
+        const match = matches.get(player.matchId);
+        if (!match || match.type !== 'octagon') break;
+        const r = octagon.lockChoice(match, player, String(msg.octagonId || ''));
+        if (!r.ok) { send_ws(ws, 'octagon.error', { reason: r.reason }); break; }
+        broadcastOctagonState(match);
+        if (r.allLocked) resolveOctagonRound(match);
         break;
       }
     }

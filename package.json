@@ -14,6 +14,7 @@
     "smoke:latency": "node scripts/e2e-latency.js",
     "smoke:battleship": "node scripts/e2e-battleship.js",
     "smoke:multi": "node scripts/e2e-multi.js",
+    "smoke:octagon": "node scripts/e2e-octagon.js",
     "tunnel": "npx --yes localtunnel --port ${PORT:-3000}"
   },
   "dependencies": {

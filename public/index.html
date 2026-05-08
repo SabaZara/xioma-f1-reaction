@@ -38,6 +38,10 @@
         <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 18 L7 14 H17 L21 18 Z M9 14 V8 H15 V14 M11 8 V4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
         <span>Battleship</span>
       </button>
+      <button class="nav-item" data-nav="octagon">
+        <svg viewBox="0 0 24 24" width="18" height="18"><polygon points="12,3 19,7 19,17 12,21 5,17 5,7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3 V21 M5 7 L19 17 M19 7 L5 17" stroke="currentColor" stroke-width="0.6" opacity="0.5"/></svg>
+        <span>Octagon</span>
+      </button>
       <button class="nav-item" data-nav="leaderboard">
         <svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 21 V11 H9 V21 M10 21 V5 H14 V21 M15 21 V13 H19 V21 M3 21 H21" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
         <span>Leaderboard</span>
@@ -187,6 +191,35 @@
             <div class="game-card-title">Place. Hunt. Sink.</div>
             <div class="game-card-sub">Strategic naval combat — both captains lock in shots simultaneously each round.</div>
             <div class="game-card-meta">PvP · 7 arenas · From $1</div>
+          </div>
+        </button>
+        <button class="game-card game-card-octagon" data-nav="octagon" type="button">
+          <div class="game-card-art game-art-octagon" aria-hidden="true">
+            <svg viewBox="0 0 200 120" width="100%" height="100%">
+              <!-- big octagon cage -->
+              <polygon points="100,12 144,30 162,72 144,108 56,108 38,72 56,30"
+                       fill="none" stroke="#ff2c3a" stroke-width="1.6" />
+              <!-- chain link cross-pattern -->
+              <g stroke="#ff2c3a" stroke-width="0.4" opacity="0.35">
+                <line x1="56" y1="30" x2="144" y2="108"/>
+                <line x1="144" y1="30" x2="56" y2="108"/>
+                <line x1="100" y1="12" x2="100" y2="108"/>
+                <line x1="38" y1="72" x2="162" y2="72"/>
+              </g>
+              <!-- attacker silhouette in the middle -->
+              <circle cx="100" cy="60" r="10" fill="#ff2c3a"/>
+              <path d="M88 84 L88 100 L92 100 L94 90 L106 90 L108 100 L112 100 L112 84 Z"
+                    fill="#ff2c3a"/>
+              <!-- two smaller fleeing figures -->
+              <circle cx="62" cy="60" r="5" fill="#aaa" opacity="0.7"/>
+              <circle cx="138" cy="56" r="5" fill="#aaa" opacity="0.7"/>
+            </svg>
+          </div>
+          <div class="game-card-body">
+            <div class="game-card-eyebrow">OCTAGON · BATTLE ROYALE</div>
+            <div class="game-card-title">Survive. Outlast. Win.</div>
+            <div class="game-card-sub">Pick your octagon each round and hope the Bone Crusher chooses elsewhere. Last one standing takes the pot.</div>
+            <div class="game-card-meta">3-8 players · From $1</div>
           </div>
         </button>
       </div>
@@ -435,6 +468,97 @@
         <p class="bs-rules">10×10 grid · 5 ships (carrier 5, battleship 4, cruiser 3, submarine 3, destroyer 2). Random placement — shuffle before locking. Both players reveal shots simultaneously each round.</p>
       </div>
     </section>
+
+    <!-- ========== OCTAGON ========== -->
+    <section class="page hidden" id="page-octagon">
+      <div class="oct-intro">
+        <h2 class="oct-page-title">Octagon · Battle Royale</h2>
+        <p class="oct-page-sub">Each round, pick which octagon to enter. The Bone Crusher attacks one. Survive long enough to take the pot — winner gets pot minus a <span id="octFeePct">6%</span> fee.</p>
+      </div>
+
+      <div class="oct-section-title">PARTY SIZE</div>
+      <div class="oct-party-tiers" id="octPartyTiers"></div>
+
+      <div class="oct-section-title">STAKE</div>
+      <div class="oct-stake-tiers" id="octStakeTiers"></div>
+
+      <div class="oct-stake-summary">
+        <div><span class="lbl">STAKE</span><span class="val" id="octStakeOut">—</span></div>
+        <div><span class="lbl">PARTY</span><span class="val" id="octPartyOut">—</span></div>
+        <div><span class="lbl">POT</span><span class="val" id="octPotOut">—</span></div>
+        <div><span class="lbl">FEE</span><span class="val" id="octFeeOut">—</span></div>
+        <div class="prize"><span class="lbl">WINNER GETS</span><span class="val" id="octPrizeOut">—</span></div>
+      </div>
+
+      <div class="oct-actions">
+        <button class="btn btn-primary btn-lg" id="btnOctFind" disabled>FIND OPPONENTS</button>
+        <p class="oct-rules">Each round: pick 1 of the offered octagons (3 → 2 → 1 as the rounds go). Anyone who picks the attacked octagon is OUT. If only one survives → they take it all. If everyone's eliminated together in the final round → those finalists split the pot.</p>
+      </div>
+    </section>
+
+    <!-- ========== OCTAGON MATCH OVERLAY ========== -->
+    <section class="overlay overlay-oct hidden" id="overlay-octmatch">
+      <div class="oct-shell">
+        <header class="oct-top">
+          <button class="oct-back" id="octBackBtn" type="button">← Lobby</button>
+          <div class="oct-top-center">
+            <div class="oct-attacker-tag">
+              <div class="oct-attacker-mug" id="octAttackerMug"></div>
+              <div class="oct-attacker-info">
+                <div class="oct-attacker-name" id="octAttackerName">THE BONE CRUSHER</div>
+                <div class="oct-attacker-tagline" id="octAttackerTagline">Pound-for-pound terror.</div>
+              </div>
+            </div>
+          </div>
+          <div class="oct-top-right">
+            <div class="oct-round-label">ROUND</div>
+            <div class="oct-round-num" id="octRoundNum">1</div>
+            <div class="oct-round-timer" id="octRoundTimer">—</div>
+          </div>
+        </header>
+
+        <div class="oct-status-bar" id="octStatusBar">
+          <div class="oct-status-text" id="octStatusText">PICK YOUR OCTAGON</div>
+          <div class="oct-status-meta" id="octStatusMeta">— locked in</div>
+        </div>
+
+        <div class="oct-cages" id="octCages">
+          <!-- octagon choice cards rendered here -->
+        </div>
+
+        <div class="oct-roster" id="octRoster">
+          <!-- live player roster — alive vs eliminated -->
+        </div>
+
+        <div class="oct-pot-bar">
+          <div class="oct-pot-cell"><span class="lbl">POT</span><span class="val" id="octPotLive">—</span></div>
+          <div class="oct-pot-cell"><span class="lbl">FEE</span><span class="val" id="octFeeLive">—</span></div>
+          <div class="oct-pot-cell"><span class="lbl">WINNER GETS</span><span class="val" id="octPayoutLive">—</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== OCTAGON RESULT MODAL ========== -->
+    <div class="modal hidden" id="octResultModal">
+      <div class="modal-card" id="octResultCard">
+        <div class="result-banner" id="octResultBanner">RESULT</div>
+        <div class="oct-result-summary">
+          <div class="oct-result-line"><span class="lbl">ROUNDS SURVIVED</span><span class="val" id="octResultRounds">—</span></div>
+          <div class="oct-result-line"><span class="lbl">FATE</span><span class="val" id="octResultFate">—</span></div>
+        </div>
+        <div class="result-payout">
+          <div><span class="lbl">POT</span><span class="val" id="octRPot">—</span></div>
+          <div><span class="lbl">FEE</span><span class="val" id="octRFee">—</span></div>
+          <div class="net"><span class="lbl">PAYOUT</span><span class="val" id="octRPayout">—</span></div>
+        </div>
+        <div class="result-extra" id="octResultExtra"></div>
+        <div class="result-actions">
+          <button class="btn btn-ghost" id="btnOctLobby">Lobby</button>
+          <button class="btn btn-primary" id="btnOctRematch">PLAY AGAIN</button>
+        </div>
+        <div class="result-seed">match seed · <span id="octRSeed">—</span></div>
+      </div>
+    </div>
 
     <!-- ========== MATCHMAKING OVERLAY ========== -->
     <section class="overlay hidden" id="overlay-mm">
