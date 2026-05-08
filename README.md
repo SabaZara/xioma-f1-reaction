@@ -2,7 +2,7 @@
 
 Server-authoritative F1 reaction duel with live WebSocket PvP, private friend rooms, bot practice, solo time attack, demo wallet, and leaderboard.
 
-## Permanent Deploy
+## Permanent Deployiiiiiii
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/SabaZara/xioma-f1-reaction)
 
