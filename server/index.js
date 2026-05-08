@@ -19,6 +19,10 @@ const CONFIG = {
   defaultStartingBalance: 500,
   stakeTiers: [1, 5, 10, 25, 50, 100],
   depositPresets: [50, 100, 250, 500, 1000],
+  // Multi-player party sizes (winner takes pot - fee)
+  partySizes: [3, 4, 5, 6, 8],
+  partySizeMin: 2,
+  partySizeMax: 8,
   // Bot reaction profile (ms). Random within range; ~3% false-start chance.
   bot: {
     minMs: 180,
@@ -114,14 +118,32 @@ function broadcastMatch(match, type, data = {}) {
   }
 }
 
-function getQueue(stake, game = 'reaction') {
-  return getQueueByKey(queueKey(stake, '', game));
+function getQueue(stake, game = 'reaction', partySize = 2) {
+  return getQueueByKey(queueKey(stake, '', game, partySize));
 }
 
-function queueKey(stake, room = '', game = 'reaction') {
+function queueKey(stake, room = '', game = 'reaction', partySize = 2) {
   const normalizedRoom = normalizeRoom(room);
-  const base = `${game}:${stake}`;
+  const base = `${game}:${stake}:p${partySize}`;
   return normalizedRoom ? `${base}:room:${normalizedRoom}` : `${base}:public`;
+}
+
+function clampPartySize(n) {
+  const v = parseInt(n, 10);
+  if (!Number.isFinite(v)) return 2;
+  return Math.max(CONFIG.partySizeMin, Math.min(CONFIG.partySizeMax, v));
+}
+
+function broadcastQueueUpdate(stake, room, game, partySize) {
+  const q = getQueueByKey(queueKey(stake, room, game, partySize));
+  for (const p of q) {
+    if (!p.ws || p.ws.readyState !== p.ws.OPEN) continue;
+    send_ws(p.ws, 'matchmaking.queued', {
+      stake, room, game, partySize,
+      waiting: q.length,
+      needed: partySize,
+    });
+  }
 }
 
 function normalizeRoom(room) {
@@ -141,23 +163,40 @@ function removeFromAllQueues(playerId) {
 }
 
 function tryMatchmake(stake, room = '', game = 'reaction', extra = {}) {
-  const q = getQueueByKey(queueKey(stake, room, game));
-  while (q.length >= 2) {
-    const a = q.shift();
-    const b = q.shift();
-    if (!a.ws || a.ws.readyState !== a.ws.OPEN) { q.unshift(b); continue; }
-    if (!b.ws || b.ws.readyState !== b.ws.OPEN) { q.unshift(a); continue; }
-    if (a.balance < stake || b.balance < stake) {
-      if (a.balance < stake) send_ws(a.ws, 'matchmaking.error', { reason: 'insufficient_funds' });
-      else q.unshift(a);
-      if (b.balance < stake) send_ws(b.ws, 'matchmaking.error', { reason: 'insufficient_funds' });
-      else q.unshift(b);
+  const partySize = (game === 'battleship') ? 2 : clampPartySize(extra.partySize || 2);
+  const q = getQueueByKey(queueKey(stake, room, game, partySize));
+  while (q.length >= partySize) {
+    const players = [];
+    for (let i = 0; i < partySize; i++) players.push(q.shift());
+
+    // Verify all websockets still open; re-queue any that are still alive.
+    let anyClosed = false;
+    for (const p of players) {
+      if (!p.ws || p.ws.readyState !== p.ws.OPEN) { anyClosed = true; break; }
+    }
+    if (anyClosed) {
+      for (const p of players) {
+        if (p.ws && p.ws.readyState === p.ws.OPEN) q.unshift(p);
+      }
       continue;
     }
+
+    // Verify all balances. Players who can't afford get an error and are
+    // dropped from the queue; others are re-queued.
+    const unfunded = players.filter(p => p.balance < stake);
+    if (unfunded.length) {
+      for (const p of unfunded) send_ws(p.ws, 'matchmaking.error', { reason: 'insufficient_funds' });
+      for (const p of players) {
+        if (!unfunded.includes(p)) q.unshift(p);
+      }
+      continue;
+    }
+
     if (game === 'battleship') {
-      createBattleshipMatch(a, b, stake, extra.arenaId);
+      createBattleshipMatch(players[0], players[1], stake, extra.arenaId);
     } else {
-      createMatch(a, b, stake, 'pvp');
+      const mode = partySize === 2 ? 'pvp' : 'multi';
+      createMatch(players, stake, mode);
     }
   }
 }
@@ -179,19 +218,27 @@ function pickBotName(avoid) {
   return `${n}-${Math.floor(Math.random()*99+10)}`;
 }
 
-function createMatch(a, b, stake, mode) {
-  if (a && !a.isBot && stake > 0) a.balance -= stake;
-  if (b && !b.isBot && stake > 0) b.balance -= stake;
+function createMatch(playersList, stake, mode) {
+  const players = (Array.isArray(playersList) ? playersList : [playersList]).filter(Boolean);
+  for (const p of players) {
+    if (!p.isBot && stake > 0) p.balance -= stake;
+  }
   const matchId = newId('m');
+  const isSolo = mode === 'solo';
+  const numPlayers = players.length;
+  const pot = isSolo ? stake : stake * numPlayers;
+  const feePercent = isSolo ? 0 : CONFIG.feePercent;
+  const feeAmount = isSolo ? 0 : +(pot * feePercent).toFixed(2);
+  const payout = isSolo ? 0 : +(pot - feeAmount).toFixed(2);
   const match = {
     id: matchId,
-    mode, // 'pvp' | 'bot' | 'solo'
+    mode, // 'pvp' | 'bot' | 'solo' | 'multi'
     stake,
-    pot: mode === 'solo' ? stake : stake * 2,
-    feePercent: mode === 'solo' ? 0 : CONFIG.feePercent,
-    feeAmount: mode === 'solo' ? 0 : +(stake * 2 * CONFIG.feePercent).toFixed(2),
-    payout: mode === 'solo' ? 0 : +(stake * 2 * (1 - CONFIG.feePercent)).toFixed(2),
-    players: [a, b].filter(Boolean),
+    pot,
+    feePercent,
+    feeAmount,
+    payout,
+    players,
     state: 'awaiting_ready',
     falseStartRetries: 0,
     seed: crypto.randomBytes(8).toString('hex'),
@@ -208,17 +255,26 @@ function createMatch(a, b, stake, mode) {
 }
 
 function emitMatchStart(match) {
+  const opponentLiveries = ['blue', 'silver', 'green', 'yellow', 'magenta', 'granturismo', 'astra'];
   for (const p of match.players) {
     if (p.isBot) continue;
-    const opp = match.players.find(x => x.id !== p.id) || { id: 'solo', name: 'TIME-ATTACK' };
+    const opps = match.players.filter(x => x.id !== p.id);
+    const firstOpp = opps[0] || { id: 'solo', name: 'TIME-ATTACK' };
+    const opponentInfo = opps.map((o, i) => ({
+      id: o.id,
+      name: o.name,
+      livery: o.livery || (match.mode === 'bot' ? 'silver' : opponentLiveries[i % opponentLiveries.length]),
+    }));
     send_ws(p.ws, 'match.start', {
       matchId: match.id, mode: match.mode, stake: match.stake,
       pot: match.pot,
       feePercent: match.feePercent,
       feeAmount: match.feeAmount,
       payout: match.payout,
+      partySize: match.players.length,
       you: { id: p.id, name: p.name, livery: p.livery || 'red' },
-      opponent: { id: opp.id, name: opp.name, livery: (opp.livery || (match.mode === 'pvp' ? 'blue' : (match.mode === 'bot' ? 'silver' : 'ghost'))) },
+      opponent: opponentInfo[0] || { id: firstOpp.id, name: firstOpp.name, livery: 'ghost' },
+      opponents: opponentInfo,
       balance: p.balance,
       requiresReady: true,
       readyCount: match.readyVotes.size,
@@ -237,12 +293,12 @@ function tryStartRound(match) {
 
 function startSoloMatch(player) {
   // Time-attack: no opponent, no money, just personal best.
-  createMatch(player, null, 0, 'solo');
+  createMatch([player], 0, 'solo');
 }
 
 function startBotMatch(player, stake) {
   const bot = makeBotPlayer(player.name);
-  createMatch(player, bot, stake, 'bot');
+  createMatch([player, bot], stake, 'bot');
 }
 
 // =====================================================================
@@ -377,6 +433,13 @@ function finalizeBattleshipMatch(match, winnerId, isVoid) {
         rounds: match.round,
       });
       if (stats.matchHistory.length > 25) stats.matchHistory.length = 25;
+      stats.transactions.unshift({
+        kind: isWinner ? 'win' : 'loss',
+        amount: isWinner ? +(match.payout - match.stake).toFixed(2) : -match.stake,
+        at: Date.now(),
+        label: `Battleship ${match.arenaName} · ${isWinner ? 'won' : 'lost'} vs ${match.players.find(x => x.id !== p.id).name}`,
+      });
+      if (stats.transactions.length > 50) stats.transactions.length = 50;
 
       send_ws(p.ws, 'battleship.match_result', {
         matchId: match.id,
@@ -537,7 +600,16 @@ function recordInput(match, player, clientTs, clientReactionMs) {
 
   if (isFalseStart) {
     broadcastMatch(match, 'player.falseStart', { playerId: player.id });
-    finalizeRound(match, { walkoverFalseStarter: player.id });
+    // For 2-player matches, a false start hands the win to the other player
+    // immediately. For multi (3+), the round continues so other valid players
+    // can still race; faulted players are excluded from winner selection.
+    if (match.mode !== 'multi') {
+      finalizeRound(match, { walkoverFalseStarter: player.id });
+      return;
+    }
+    if (match.inputs.size >= match.players.length) {
+      finalizeRound(match);
+    }
     return;
   }
 
@@ -598,11 +670,11 @@ function finalizeRound(match, opts = {}) {
     return;
   }
 
-  const [pA, pB] = match.players;
   const fsId = opts.walkoverFalseStarter || null;
   const isTimeout = opts.reason === 'timeout';
 
-  const fillMissing = (player) => {
+  // Fill missing inputs for any player that didn't lock in.
+  for (const player of match.players) {
     if (!match.inputs.has(player.id)) {
       const isWalkover = fsId && player.id !== fsId;
       match.inputs.set(player.id, {
@@ -615,28 +687,29 @@ function finalizeRound(match, opts = {}) {
         walkover: !!isWalkover,
       });
     }
-  };
-  fillMissing(pA);
-  fillMissing(pB);
+  }
 
-  const ia = match.inputs.get(pA.id);
-  const ib = match.inputs.get(pB.id);
+  // Partition players into faulted (false start / no input) vs survivors.
+  // A walkover survivor has no reaction time but still beats anyone faulted.
+  const survivors = [];
+  for (const player of match.players) {
+    const inp = match.inputs.get(player.id);
+    const isFault = inp.isFalseStart || (inp.timedOut && !inp.walkover);
+    if (!isFault) survivors.push({ player, inp });
+  }
 
-  const aFault = ia.isFalseStart || (ia.timedOut && !ia.walkover);
-  const bFault = ib.isFalseStart || (ib.timedOut && !ib.walkover);
-
-  if (aFault && bFault) {
+  // No survivor at all — round is void; let humans re-ready up to the cap.
+  if (survivors.length === 0) {
     match.falseStartRetries += 1;
     if (match.falseStartRetries >= CONFIG.maxFalseStartRetries) {
       voidAndRefund(match, 'repeated_false_starts');
       return;
     }
-    // Reset to awaiting_ready so both players must press READY again before retry.
     match.state = 'awaiting_ready';
     match.readyVotes.clear();
     broadcastMatch(match, 'round.void', {
       matchId: match.id,
-      reason: 'both_invalid',
+      reason: match.players.length > 2 ? 'all_invalid' : 'both_invalid',
       retry: match.falseStartRetries,
       readyCount: 0,
       readyNeeded: match.players.filter(p => !p.isBot).length,
@@ -644,27 +717,50 @@ function finalizeRound(match, opts = {}) {
     return;
   }
 
+  // Among survivors, pick the fastest reaction; if nobody actually reacted
+  // (e.g. one survivor by walkover after the other false-started), the lone
+  // survivor wins by default. Ties broken by server-observed timestamp,
+  // then deterministic seed bit.
+  const racers = survivors.filter(r => r.inp.reactionTime != null);
   let winnerId;
-  if (aFault) winnerId = pB.id;
-  else if (bFault) winnerId = pA.id;
-  else if (ia.reactionTime < ib.reactionTime) winnerId = pA.id;
-  else if (ib.reactionTime < ia.reactionTime) winnerId = pB.id;
-  else if (ia.inputTimestampServer < ib.inputTimestampServer) winnerId = pA.id;
-  else if (ib.inputTimestampServer < ia.inputTimestampServer) winnerId = pB.id;
-  else {
-    const seedNum = parseInt(match.seed.slice(0, 8), 16);
-    winnerId = (seedNum & 1) ? pA.id : pB.id;
+  if (racers.length > 0) {
+    racers.sort((a, b) => {
+      if (a.inp.reactionTime !== b.inp.reactionTime) return a.inp.reactionTime - b.inp.reactionTime;
+      if (a.inp.inputTimestampServer !== b.inp.inputTimestampServer) {
+        return a.inp.inputTimestampServer - b.inp.inputTimestampServer;
+      }
+      const seedNum = parseInt(match.seed.slice(0, 8), 16);
+      return (seedNum & 1) ? -1 : 1;
+    });
+    winnerId = racers[0].player.id;
+  } else {
+    winnerId = survivors[0].player.id;
   }
 
   const winner = match.players.find(p => p.id === winnerId);
   if (!winner.isBot) winner.balance += match.payout;
 
   match.state = 'resolved';
+
+  // Build shared payload pieces (works for any number of players).
+  const times = {};
+  const playerInfo = {};
+  for (const p of match.players) {
+    const inp = match.inputs.get(p.id);
+    times[p.id] = {
+      reactionTime: inp.reactionTime,
+      falseStart: inp.isFalseStart,
+      timedOut: !!inp.timedOut,
+      walkover: !!inp.walkover,
+    };
+    playerInfo[p.id] = { name: p.name };
+  }
+
   for (const p of match.players) {
     if (p.isBot) continue;
     const isWinner = p.id === winnerId;
     const stats = getStats(p);
-    if (match.mode === 'pvp') {
+    if (match.mode === 'pvp' || match.mode === 'multi') {
       stats.pvp.played += 1;
       if (isWinner) { stats.pvp.wins += 1; stats.pvp.netProfit += match.payout - match.stake; }
       else { stats.pvp.losses += 1; stats.pvp.netProfit -= match.stake; }
@@ -678,6 +774,10 @@ function finalizeRound(match, opts = {}) {
     if (myInp.reactionTime != null) {
       stats.bestReactionMs = Math.min(stats.bestReactionMs || Infinity, myInp.reactionTime);
     }
+    const opps = match.players.filter(x => x.id !== p.id);
+    const oppName = opps.length === 1
+      ? opps[0].name
+      : `${opps.length} drivers`;
     stats.matchHistory.unshift({
       mode: match.mode,
       stake: match.stake,
@@ -686,10 +786,22 @@ function finalizeRound(match, opts = {}) {
       yourFalse: myInp.isFalseStart,
       payout: isWinner ? match.payout : 0,
       net: isWinner ? (match.payout - match.stake) : -match.stake,
-      opponentName: match.players.find(x => x.id !== p.id).name,
+      opponentName: oppName,
+      partySize: match.players.length,
       at: Date.now(),
     });
     if (stats.matchHistory.length > 25) stats.matchHistory.length = 25;
+    if (match.mode !== 'solo' && match.stake > 0) {
+      stats.transactions.unshift({
+        kind: isWinner ? 'win' : 'loss',
+        amount: isWinner ? +(match.payout - match.stake).toFixed(2) : -match.stake,
+        at: Date.now(),
+        label: match.mode === 'multi'
+          ? `Multi (${match.players.length}p) · ${isWinner ? 'won' : 'lost'}`
+          : `${match.mode === 'bot' ? 'Bot' : 'PvP'} reaction · ${isWinner ? 'won' : 'lost'} vs ${opps[0] ? opps[0].name : '—'}`,
+      });
+      if (stats.transactions.length > 50) stats.transactions.length = 50;
+    }
 
     send_ws(p.ws, 'match.result', {
       matchId: match.id,
@@ -700,14 +812,9 @@ function finalizeRound(match, opts = {}) {
       feeAmount: match.feeAmount,
       payout: isWinner ? match.payout : 0,
       stakeRefunded: 0,
-      times: {
-        [pA.id]: { reactionTime: ia.reactionTime, falseStart: ia.isFalseStart, timedOut: !!ia.timedOut, walkover: !!ia.walkover },
-        [pB.id]: { reactionTime: ib.reactionTime, falseStart: ib.isFalseStart, timedOut: !!ib.timedOut, walkover: !!ib.walkover },
-      },
-      players: {
-        [pA.id]: { name: pA.name },
-        [pB.id]: { name: pB.name },
-      },
+      times,
+      players: playerInfo,
+      partySize: match.players.length,
       balance: p.balance,
       seed: match.seed,
       stats: snapshotStats(p),
@@ -799,10 +906,10 @@ function handleDisconnect(player) {
   const match = matches.get(matchId);
   if (!match) return;
   if (match.state === 'resolved' || match.state === 'voided') return;
-  const opponent = match.players.find(p => p.id !== player.id);
-  if (!opponent || opponent.isBot) { cleanupMatch(match); return; }
 
   if (match.type === 'battleship') {
+    const opponent = match.players.find(p => p.id !== player.id);
+    if (!opponent || opponent.isBot) { cleanupMatch(match); return; }
     // Pre-combat (placing): refund both. In combat: opponent wins by walkover.
     if (match.state === 'placing') {
       opponent.balance += match.stake;
@@ -821,6 +928,41 @@ function handleDisconnect(player) {
     }
     return;
   }
+
+  // Multi-player (3+) reaction match: don't kill the whole match for one
+  // disconnect. The leaver forfeits their stake; remaining racers play on.
+  if (match.mode === 'multi') {
+    if (match.state === 'awaiting_ready') {
+      // Pre-game: refund everyone and void the match.
+      voidAndRefund(match, 'opponent_disconnected');
+      return;
+    }
+    if (match.state === 'countdown' || match.state === 'green' || match.state === 'awaiting_inputs') {
+      // Mark the leaver as having no input so the round can finalize.
+      if (!match.inputs.has(player.id)) {
+        match.inputs.set(player.id, {
+          playerId: player.id,
+          inputTimestampClient: null,
+          inputTimestampServer: null,
+          isFalseStart: false,
+          reactionTime: null,
+          timedOut: true,
+          walkover: false,
+        });
+      }
+      broadcastMatch(match, 'player.disconnect', { playerId: player.id });
+      if (match.inputs.size >= match.players.length) {
+        finalizeRound(match);
+      }
+      return;
+    }
+    cleanupMatch(match);
+    return;
+  }
+
+  // 2-player reaction (pvp / bot) — original walkover semantics.
+  const opponent = match.players.find(p => p.id !== player.id);
+  if (!opponent || opponent.isBot) { cleanupMatch(match); return; }
 
   if (match.state === 'awaiting_ready' || match.state === 'ready' || match.state === 'countdown') {
     opponent.balance += match.stake;
@@ -884,6 +1026,9 @@ wss.on('connection', (ws) => {
       stakeTiers: CONFIG.stakeTiers,
       depositPresets: CONFIG.depositPresets,
       reactionTimeoutMs: CONFIG.reactionTimeoutMs,
+      partySizes: CONFIG.partySizes,
+      partySizeMin: CONFIG.partySizeMin,
+      partySizeMax: CONFIG.partySizeMax,
       battleship: {
         arenas: battleship.ARENAS,
         boardSize: battleship.BOARD_SIZE,
@@ -945,6 +1090,7 @@ wss.on('connection', (ws) => {
         const room = normalizeRoom(msg.room);
         const game = (msg.game === 'battleship') ? 'battleship' : 'reaction';
         const arenaId = String(msg.arenaId || '');
+        const partySize = (game === 'battleship') ? 2 : clampPartySize(msg.partySize || 2);
         // For battleship, validate arenaId and use its stake; for reaction,
         // the stake comes from CONFIG.stakeTiers.
         let effectiveStake = stake;
@@ -969,9 +1115,12 @@ wss.on('connection', (ws) => {
         // game type when matched.
         player.queueGame = game;
         player.queueArenaId = arenaId;
-        getQueueByKey(queueKey(effectiveStake, room, game)).push(player);
-        send_ws(ws, 'matchmaking.queued', { stake: effectiveStake, room, game, arenaId });
-        tryMatchmake(effectiveStake, room, game, { arenaId });
+        player.queuePartySize = partySize;
+        getQueueByKey(queueKey(effectiveStake, room, game, partySize)).push(player);
+        // Tell every player currently in this queue about the new size so
+        // multi-player lobbies can show "X / N waiting".
+        broadcastQueueUpdate(effectiveStake, room, game, partySize);
+        tryMatchmake(effectiveStake, room, game, { arenaId, partySize });
         break;
       }
       case 'play.bot': {
@@ -988,7 +1137,27 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'matchmaking.cancel': {
-        removeFromAllQueues(player.id);
+        const queuesToRefresh = [];
+        for (const [key, q] of queues) {
+          const idx = q.findIndex(p => p.id === player.id);
+          if (idx !== -1) {
+            q.splice(idx, 1);
+            queuesToRefresh.push(key);
+          }
+        }
+        // Notify other players in any queue we just left so their counts
+        // stay accurate while waiting.
+        for (const key of queuesToRefresh) {
+          const q = queues.get(key);
+          if (!q) continue;
+          for (const p of q) {
+            if (!p.ws || p.ws.readyState !== p.ws.OPEN) continue;
+            send_ws(p.ws, 'matchmaking.queue_update', {
+              waiting: q.length,
+              needed: p.queuePartySize || 2,
+            });
+          }
+        }
         send_ws(ws, 'matchmaking.cancelled', {});
         break;
       }
@@ -1040,8 +1209,24 @@ wss.on('connection', (ws) => {
           else startSoloMatch(player);
           break;
         }
-        // PvP: if the opponent is no longer connected, fall back to a new
-        // public match at the same stake so the player isn't stuck.
+        // For multi (3+), there is no shared "rematch" gesture — just send
+        // the player back into the matchmaking queue at the same party size.
+        if (match.mode === 'multi') {
+          if (player.balance < match.stake) {
+            send_ws(ws, 'rematch.failed', { reason: 'insufficient_funds' });
+            break;
+          }
+          const ps = match.players.length;
+          removeFromAllQueues(player.id);
+          player.queueGame = 'reaction';
+          player.queuePartySize = ps;
+          getQueueByKey(queueKey(match.stake, '', 'reaction', ps)).push(player);
+          broadcastQueueUpdate(match.stake, '', 'reaction', ps);
+          tryMatchmake(match.stake, '', 'reaction', { partySize: ps });
+          break;
+        }
+        // PvP 2-player: if the opponent is no longer connected, fall back to
+        // a fresh public match at the same stake so the player isn't stuck.
         const opp = match.players.find(p => p.id !== player.id);
         if (!opp || !opp.ws || opp.ws.readyState !== opp.ws.OPEN) {
           send_ws(ws, 'rematch.failed', { reason: 'opponent_left', stake: match.stake });

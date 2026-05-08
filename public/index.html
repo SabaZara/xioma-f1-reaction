@@ -218,6 +218,7 @@
     <section class="page hidden" id="page-play">
       <div class="modes-tabs">
         <button class="modes-tab active" data-modetab="pvp">PvP DUEL</button>
+        <button class="modes-tab" data-modetab="multi">MULTIPLAYER</button>
         <button class="modes-tab" data-modetab="bot">VS BOT</button>
         <button class="modes-tab" data-modetab="solo">TIME ATTACK</button>
       </div>
@@ -249,6 +250,28 @@
           </div>
         </div>
         <button class="btn btn-primary btn-lg" id="btnFindPvP" disabled>FIND OPPONENT</button>
+      </div>
+
+      <div class="mode-panel hidden" id="modePanel-multi">
+        <h2>Multiplayer Free-For-All</h2>
+        <p>3 to 8 drivers all stake the same amount. Lights go green, fastest reaction takes the entire pot minus a <span id="multiFeePct">6%</span> fee. False starts are out — clean reactions only.</p>
+        <div class="stake-tiers" id="multiTiers"></div>
+        <div class="multi-party">
+          <div class="multi-party-label">PARTY SIZE</div>
+          <div class="party-tiers" id="multiPartyTiers"></div>
+        </div>
+        <div class="stake-summary multi-summary">
+          <div><span class="lbl">STAKE</span><span class="val" id="multiStake">—</span></div>
+          <div><span class="lbl">PLAYERS</span><span class="val" id="multiPartyVal">—</span></div>
+          <div><span class="lbl">POT</span><span class="val" id="multiPot">—</span></div>
+          <div><span class="lbl">FEE</span><span class="val" id="multiFee">—</span></div>
+          <div class="prize"><span class="lbl">WINNER GETS</span><span class="val" id="multiPrize">—</span></div>
+        </div>
+        <div class="multi-status hidden" id="multiQueueStatus">
+          <span class="multi-status-label">WAITING FOR PLAYERS</span>
+          <span class="multi-status-count"><span id="multiWaiting">0</span> / <span id="multiNeeded">0</span></span>
+        </div>
+        <button class="btn btn-primary btn-lg" id="btnFindMulti" disabled>FIND MULTIPLAYER MATCH</button>
       </div>
 
       <div class="mode-panel hidden" id="modePanel-bot">
@@ -425,6 +448,7 @@
         <h2>Finding opponent</h2>
         <p>Stake locked at <span id="mmStake">—</span></p>
         <p class="mm-room hidden" id="mmRoom">Room <span id="mmRoomCode">—</span></p>
+        <p class="mm-hint" id="mmHint"></p>
         <button class="btn btn-ghost" id="btnCancelMM">Cancel</button>
       </div>
     </section>
@@ -598,7 +622,7 @@
     <div class="modal hidden" id="resultModal">
       <div class="modal-card" id="resultCard">
         <div class="result-banner" id="resultBanner">RESULT</div>
-        <div class="result-times">
+        <div class="result-times" id="resultTimes">
           <div class="rt-block" id="rtYouBlock">
             <div class="rt-label" id="rtYouLabel">YOU</div>
             <div class="rt-value" id="rtYou">—</div>
@@ -610,6 +634,10 @@
             <div class="rt-value" id="rtOpp">—</div>
             <div class="rt-tag" id="rtOppTag"></div>
           </div>
+        </div>
+        <div class="multi-results hidden" id="multiResults">
+          <div class="multi-results-head">RACE RESULTS</div>
+          <div class="multi-results-list" id="multiResultsList"></div>
         </div>
         <div class="result-payout">
           <div><span class="lbl">POT</span><span class="val" id="rPot">—</span></div>

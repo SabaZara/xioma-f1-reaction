@@ -470,6 +470,49 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
 .solo-best .lbl { font-size: 10px; letter-spacing: 0.2em; color: var(--ink-3); }
 .solo-best .val { font-family: var(--font-mono); font-weight: 700; font-size: 18px; color: var(--green); }
 
+/* === Multiplayer mode === */
+.multi-party { display: flex; flex-direction: column; gap: 8px; }
+.multi-party-label { font-size: 10px; letter-spacing: 0.2em; color: var(--ink-3); font-weight: 700; }
+.party-tiers { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.party-tier {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 12px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  font-family: var(--font-mono); font-weight: 700; font-size: 18px; color: var(--ink);
+  cursor: pointer; transition: transform 0.15s, border-color 0.15s;
+}
+.party-tier .lbl { font-size: 9px; letter-spacing: 0.18em; color: var(--ink-3); margin-top: 4px; font-weight: 700; }
+.party-tier:hover { border-color: var(--line-2); transform: translateY(-1px); }
+.party-tier.selected { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+.party-tier.selected { color: var(--blue-2); }
+.multi-summary { grid-template-columns: repeat(5, 1fr); }
+.multi-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; background: var(--bg-1); border: 1px dashed var(--blue);
+  border-radius: 10px;
+}
+.multi-status-label { font-size: 11px; letter-spacing: 0.18em; color: var(--ink-3); font-weight: 700; }
+.multi-status-count { font-family: var(--font-mono); font-weight: 800; font-size: 18px; color: var(--blue-2); letter-spacing: 0.06em; }
+
+/* Multi-result leaderboard inside the result modal */
+.multi-results { display: flex; flex-direction: column; gap: 8px; }
+.multi-results.hidden { display: none; }
+.multi-results-head {
+  font-size: 10px; letter-spacing: 0.22em; color: var(--ink-3); font-weight: 800; text-align: center;
+}
+.multi-results-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.multi-result-row {
+  display: grid; grid-template-columns: 32px 1fr auto; align-items: center;
+  gap: 10px; padding: 8px 10px; background: var(--bg-1); border: 1px solid var(--line);
+  border-radius: 8px; font-size: 13px;
+}
+.multi-result-row.is-you { border-color: var(--blue); }
+.multi-result-row.is-winner { border-color: var(--green); background: linear-gradient(180deg, rgba(43,212,125,0.10), transparent); }
+.multi-result-row.is-fault { color: var(--ink-3); }
+.mr-rank { font-family: var(--font-mono); font-weight: 800; color: var(--ink-3); font-size: 13px; text-align: center; }
+.multi-result-row.is-winner .mr-rank { color: var(--green); }
+.mr-name { font-weight: 700; letter-spacing: 0.04em; }
+.mr-time { font-family: var(--font-mono); font-weight: 700; }
+
 /* ========== LEADERBOARD PAGE ========== */
 .lb-head { margin-bottom: 18px; }
 .lb-head h2 { margin: 0 0 6px; font-size: 24px; }
@@ -571,6 +614,8 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
 .mm-card h2 { margin: 12px 0 0; font-size: 22px; }
 .mm-card p { color: var(--ink-2); }
 .mm-room { margin-top: -6px; font-family: var(--font-mono); font-size: 12px; color: var(--blue-2) !important; letter-spacing: 0.12em; }
+.mm-hint { margin-top: -6px; font-family: var(--font-mono); font-size: 12px; color: var(--blue-2) !important; letter-spacing: 0.06em; }
+.mm-hint:empty { display: none; }
 
 /* ========== RACE ARENA ========== */
 .race-shell { width: min(1240px, 96vw); padding: 24px; display: flex; flex-direction: column; gap: 14px; }
