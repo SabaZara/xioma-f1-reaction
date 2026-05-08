@@ -1037,44 +1037,60 @@ function paintBsBoards(snap) {
   const boardYou = $('#bsBoardYou');
   const boardOpp = $('#bsBoardOpp');
   const N = state.bs.boardSize;
-  // YOU board: render owned ship cells + opponent's shots at me
-  boardYou.innerHTML = '';
-  const youCellEls = {};
-  for (let y = 0; y < N; y++) {
+
+  // Render a board with header row (A-J) + header column (1-10).
+  function renderBoard(boardEl, isOpp) {
+    boardEl.innerHTML = '';
+    const cellEls = {};
+
+    // Top-left empty corner
+    const corner = document.createElement('div');
+    corner.className = 'bs-coord bs-coord-corner';
+    boardEl.appendChild(corner);
+
+    // Column headers A-J
     for (let x = 0; x < N; x++) {
-      const c = document.createElement('div');
-      c.className = 'bs-cell';
-      c.dataset.x = x; c.dataset.y = y;
-      youCellEls[`${x},${y}`] = c;
-      boardYou.appendChild(c);
+      const h = document.createElement('div');
+      h.className = 'bs-coord';
+      h.textContent = String.fromCharCode(65 + x);
+      boardEl.appendChild(h);
     }
+
+    // Each row: header (1-10) + 10 cells
+    for (let y = 0; y < N; y++) {
+      const rh = document.createElement('div');
+      rh.className = 'bs-coord';
+      rh.textContent = String(y + 1);
+      boardEl.appendChild(rh);
+
+      for (let x = 0; x < N; x++) {
+        const c = document.createElement('div');
+        c.className = 'bs-cell';
+        if (y === 0) c.classList.add('edge-top');
+        if (x === 0) c.classList.add('edge-left');
+        c.dataset.x = x; c.dataset.y = y;
+        cellEls[`${x},${y}`] = c;
+        if (isOpp && snap.state === 'playing' && !snap.pending.youLockedIn) {
+          c.addEventListener('click', () => bsTargetCell(x, y));
+        }
+        boardEl.appendChild(c);
+      }
+    }
+    return cellEls;
   }
+
+  // YOU board
+  const youCellEls = renderBoard(boardYou, false);
   for (const ship of snap.you.ships) {
-    for (const cell of ship.cells) {
-      const el = youCellEls[`${cell.x},${cell.y}`];
-      if (el) el.classList.add('bs-cell-ship');
-    }
+    paintShipOnBoard(youCellEls, ship);
   }
   for (const shot of snap.you.shotsAtMe) {
     const el = youCellEls[`${shot.x},${shot.y}`];
     if (el) el.classList.add(shot.hit ? 'bs-cell-hit' : 'bs-cell-miss');
   }
 
-  // OPPONENT board: only my shots are visible. Click to target during 'playing'.
-  boardOpp.innerHTML = '';
-  const oppCellEls = {};
-  for (let y = 0; y < N; y++) {
-    for (let x = 0; x < N; x++) {
-      const c = document.createElement('div');
-      c.className = 'bs-cell';
-      c.dataset.x = x; c.dataset.y = y;
-      oppCellEls[`${x},${y}`] = c;
-      if (snap.state === 'playing' && !snap.pending.youLockedIn) {
-        c.addEventListener('click', () => bsTargetCell(x, y));
-      }
-      boardOpp.appendChild(c);
-    }
-  }
+  // OPPONENT board (fog of war until end)
+  const oppCellEls = renderBoard(boardOpp, true);
   for (const shot of snap.opponent.myShots) {
     const el = oppCellEls[`${shot.x},${shot.y}`];
     if (el) el.classList.add(shot.hit ? 'bs-cell-hit' : 'bs-cell-miss');
@@ -1085,6 +1101,21 @@ function paintBsBoards(snap) {
     const el = oppCellEls[`${x},${y}`];
     if (el) el.classList.add('bs-cell-target');
   }
+}
+
+// Paint a ship onto a cellMap with proper end-cap rounding so it reads as a
+// single boat shape across multiple cells.
+function paintShipOnBoard(cellMap, ship) {
+  if (!ship.cells || !ship.cells.length) return;
+  // Detect orientation by comparing first two cells
+  const horizontal = ship.cells.length > 1 && ship.cells[0].y === ship.cells[1].y;
+  ship.cells.forEach((cell, i) => {
+    const el = cellMap[`${cell.x},${cell.y}`];
+    if (!el) return;
+    el.classList.add('bs-cell-ship');
+    if (i === 0) el.classList.add(horizontal ? 'ship-end-h-l' : 'ship-end-v-t');
+    if (i === ship.cells.length - 1) el.classList.add(horizontal ? 'ship-end-h-r' : 'ship-end-v-b');
+  });
 }
 
 function paintBsFleet(snap) {
