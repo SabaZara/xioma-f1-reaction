@@ -829,8 +829,13 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
     radial-gradient(60% 70% at 50% 90%, rgba(91,140,255,0.18) 0%, transparent 70%),
     radial-gradient(40% 30% at 80% 20%, rgba(255,44,58,0.10) 0%, transparent 70%),
     linear-gradient(180deg, #14161e 0%, #06070a 100%);
-  border-right: 1px solid var(--line);
+  border-right: 0;
+  border-left: 1px solid var(--line);
 }
+/* Battleship card alternates layout — art on the right, body on the left. */
+.game-card-battleship { grid-template-columns: 1fr 220px; }
+.game-card-battleship .game-card-art { grid-column: 2; grid-row: 1; }
+.game-card-battleship .game-card-body { grid-column: 1; grid-row: 1; }
 .game-card-body {
   display: flex; flex-direction: column; gap: 6px;
   padding: 22px 24px;
@@ -851,6 +856,9 @@ kbd { font-family: var(--font-mono); background: var(--panel-2); border:1px soli
   .game-card { grid-template-columns: 1fr; }
   .game-card-art { border-right: 0; border-bottom: 1px solid var(--line); padding: 22px; }
   .game-card-art svg { max-width: 220px; }
+  .game-card-battleship { grid-template-columns: 1fr; }
+  .game-card-battleship .game-card-art { grid-column: 1; grid-row: 1; border-left: 0; border-bottom: 1px solid var(--line); }
+  .game-card-battleship .game-card-body { grid-column: 1; grid-row: 2; }
 }
 
 /* ========================================================
